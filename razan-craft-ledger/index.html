@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Razan Craft Ledger</title>
+<meta name="description" content="คำนวณต้นทุนคราฟที่ Razan ใน 12Tails Online แตกสูตรย่อยอัตโนมัติ ใส่ราคาได้ทุกวัตถุดิบ">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="assets/app.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand"><h1>Razan Craft Ledger</h1><small>12Tails Online · sv.TalesOfTails</small></div>
+    <nav class="views" id="views">
+      <button data-act="view" data-v="recipes" aria-pressed="true">สูตรคราฟ</button>
+      <button data-act="view" data-v="prices" aria-pressed="false">สมุดราคา</button>
+      <button data-act="view" data-v="queue" aria-pressed="false">รายการคราฟ<span class="cnt" id="qcnt"></span></button>
+    </nav>
+    <div class="meta">
+      <span class="progress" title="จำนวนไอเทมที่ใส่ราคาแล้ว"><span class="bar"><i id="pbar"></i></span><span class="num" id="ptxt"></span></span>
+      <span class="sync" id="sync">บันทึกในเบราว์เซอร์นี้</span>
+    </div>
+  </header>
+  <main id="main" class="v-recipes"></main>
+</div>
+<div id="modal-root"></div>
+<script src="assets/vendor/jszip.min.js"></script>
+<script src="data/recipes.js"></script>
+<script src="assets/app.js"></script>
+</body>
+</html>
