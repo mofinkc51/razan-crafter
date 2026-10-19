@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<script>(function(){var t="dark";try{t=localStorage.getItem("razan-theme")||"dark"}catch(e){}if(t!=="auto")document.documentElement.setAttribute("data-theme",t)})();</script>
 <title>Razan Craft Ledger</title>
 <meta name="description" content="คำนวณต้นทุนคราฟที่ Razan ใน 12Tails Online แตกสูตรย่อยอัตโนมัติ ใส่ราคาได้ทุกวัตถุดิบ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -20,6 +21,7 @@
     </nav>
     <div class="meta">
       <span class="progress" title="จำนวนไอเทมที่ใส่ราคาแล้ว"><span class="bar"><i id="pbar"></i></span><span class="num" id="ptxt"></span></span>
+      <button class="themebtn" id="themebtn" data-act="theme" type="button"></button>
       <span class="sync" id="sync">บันทึกในเบราว์เซอร์นี้</span>
     </div>
   </header>

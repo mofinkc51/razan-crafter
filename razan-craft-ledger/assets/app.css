@@ -49,6 +49,8 @@ header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background
 .progress{display:flex;align-items:center;gap:8px}
 .bar{width:90px;height:6px;border-radius:3px;background:var(--line2);overflow:hidden}
 .bar i{display:block;height:100%;background:var(--jil)}
+.themebtn{border:1px solid var(--line);background:var(--raise);color:var(--ink2);border-radius:999px;padding:3px 12px;font-size:12px;white-space:nowrap}
+.themebtn:hover{color:var(--ink)}
 .sync{display:inline-flex;align-items:center;gap:5px}
 .sync::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--ink3)}
 .sync.on::before{background:var(--ok)}

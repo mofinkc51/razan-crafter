@@ -1,3 +1,10 @@
+/* theme: dark (default) / light / auto (follow the device) */
+const THEME_TH={dark:"ธีม: มืด",light:"ธีม: สว่าง",auto:"ธีม: ตามเครื่อง"};
+function curTheme(){try{return localStorage.getItem("razan-theme")||"dark"}catch(e){return "dark"}}
+function setTheme(t){try{localStorage.setItem("razan-theme",t)}catch(e){}
+  if(t==="auto")document.documentElement.removeAttribute("data-theme");else document.documentElement.setAttribute("data-theme",t);
+  const b=document.getElementById("themebtn");if(b){b.textContent=THEME_TH[t];b.title="กดเพื่อสลับธีม (มืด → สว่าง → ตามเครื่อง)"}}
+setTheme(curTheme());
 const RAW=window.RAZAN_RECIPES||[];
 const TAB_ORDER=["Wolf","Bison","Panda","Sheep","Bat","Rabbit","Cat","Penguin","Mole","Chameleon","Whale","Monkey","Material","Trinket","Special"];
 const TAB_TH={Wolf:"Wolf · ดาบ",Bison:"Bison · ขวาน/ค้อน",Panda:"Panda · สนับมือ",Sheep:"Sheep · หนังสือ",Bat:"Bat · คทา",Rabbit:"Rabbit · ปืน",Cat:"Cat · มีด",Penguin:"Penguin · ไม้เท้า",Mole:"Mole · ปืนใหญ่",Chameleon:"Chameleon · ธนู",Whale:"Whale · หอก",Monkey:"Monkey · ไมค์",Material:"Material",Trinket:"Trinket",Special:"Special"};
@@ -239,6 +246,7 @@ function toast(t){const el=document.createElement("div");el.className="toast";el
 async function copy(text,ta){try{await navigator.clipboard.writeText(text);toast("คัดลอกแล้ว")}catch(e){if(ta){ta.focus();ta.select()}toast("คัดลอกอัตโนมัติไม่ได้ กด Ctrl+C")}}
 const listText=acc=>Object.entries(acc).map(([k,q])=>`${ITEMS.get(k).name} x${q}`).join("\n");
 document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
+  if(a==="theme"){const order=["dark","light","auto"];setTheme(order[(order.indexOf(curTheme())+1)%3]);return}
   if(a==="view"){U.view=b.dataset.v;render()}
   else if(a==="tab"){U.tab=b.dataset.t;if(!b.dataset.keepq)U.q="";const first=RECIPES.find(r=>U.tab==="*"||r.tab===U.tab);if(first&&window.innerWidth>1000)U.sel=first.id;render();document.querySelector(".list")?.scrollTo(0,0)}
   else if(a==="type"){U.type=b.dataset.t;render()}
