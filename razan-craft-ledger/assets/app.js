@@ -30,12 +30,12 @@ const uplBtn=(k,label)=>ASSETS?`<label class="upl">${label}<input type="file" ac
 
 /* ---------- state ---------- */
 const LS="razan-ledger-v1";
-let S={prices:{},mode:{},queue:[]};
-function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}))}
-const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),at:Date.now()});
+let S={prices:{},mode:{},queue:[],have:new Set(),buy:new Set()};
+function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[])}
+const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],at:Date.now()});
 try{const s=localStorage.getItem(LS);if(s)load(JSON.parse(s))}catch(e){}
 let dbDoc=null,saveT=null;
-function save(){clearTimeout(saveT);saveT=setTimeout(async()=>{const d=dump();try{localStorage.setItem(LS,JSON.stringify(d))}catch(e){}
+function save(){try{localStorage.setItem(LS,JSON.stringify(dump()))}catch(e){}clearTimeout(saveT);saveT=setTimeout(async()=>{const d=dump();
   if(dbDoc){try{await dbDoc.set(d);setSync(true)}catch(e){setSync(false)}}},700)}
 function setSync(on){const el=document.getElementById("sync");el.classList.toggle("on",on);el.textContent=on?"บันทึกในบัญชีแล้ว":"บันทึกในเบราว์เซอร์นี้"}
 const IDB=(()=>{let p;const open=()=>p||(p=new Promise((res,rej)=>{const r=indexedDB.open("razan-ledger",1);r.onupgradeneeded=()=>r.result.createObjectStore("images");r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)}));
@@ -67,7 +67,7 @@ function expand(rec,n,acc,crafts){crafts[rec.k]=(crafts[rec.k]||0)+n;
     if(e.use==="craft"&&it.recipe){crafts[g.k]=(crafts[g.k]||0)+q;walk(it.recipe.ing,q,[...stack,g.k])}else acc[g.k]=(acc[g.k]||0)+q}})(rec.ing,n,[rec.k])}
 
 /* ---------- ui state ---------- */
-let U={view:"recipes",tab:"Wolf",q:"",type:"",sel:0,qty:1,open:new Set(),pbFilter:"all",pbQ:"",showDetail:false,useSel:"",useQ:"",useCat:"all",useTab:"",useDirect:false,useShow:false};
+let U={view:"recipes",tab:"Wolf",q:"",type:"",sel:0,qty:1,open:new Set(),pbFilter:"all",pbQ:"",showDetail:false,useSel:"",useQ:"",useCat:"all",useTab:"",useDirect:false,useShow:false,invMode:"view",buyNames:false};
 try{const s=JSON.parse(localStorage.getItem(LS+"-ui")||"{}");Object.assign(U,{tab:s.tab||U.tab,sel:s.sel??U.sel,view:s.view||U.view,useSel:s.useSel||""})}catch(e){}
 const saveUI=()=>{try{localStorage.setItem(LS+"-ui",JSON.stringify({tab:U.tab,sel:U.sel,view:U.view,useSel:U.useSel}))}catch(e){}};
 
@@ -230,13 +230,64 @@ function viewPrices(){
 
 /* ---------- inventory-style preview of everything to gather ---------- */
 const qtyShort=n=>n>=10000?(Math.round(n/100)/10).toLocaleString("en-US")+"k":n.toLocaleString("en-US");
+const INV_MODES=[["view","ดูข้อมูล"],["check","เช็กครบ/ขาด"],["buy","เลือกไปรับซื้อ"]];
+const INV_HINT={view:"กดช่องเพื่อดูว่าของชิ้นนั้นใช้ทำอะไรได้",check:"กดช่องเพื่อสลับ ครบ ✓ / ขาด",buy:"กดช่องเพื่อเพิ่มหรือเอาออกจากคลังรับซื้อ"};
+const hasImg=k=>{const s=imgSrc(k);return !!s&&!BAD.has(s)};
+function slotHtml(x,where){const it=ITEMS.get(x.k),got=S.have.has(x.k),inBuy=S.buy.has(x.k);
+  const pic=hasImg(x.k)?`<img src="${esc(imgSrc(x.k))}" alt="" loading="lazy" onerror="slotFail(this)">`:`<span class="slot-ini">${esc(initials(it.name))}</span>`;
+  const cls="slot"+(where==="inv"&&got?" got":"")+(where==="inv"&&inBuy?" picked":"");
+  const act=where==="buy"?(U.invMode==="buy"?"slot":"uses"):"slot";
+  return `<button class="${cls}" data-act="${act}" data-k="${esc(x.k)}" title="${esc(it.name)} ×${x.q.toLocaleString()}${got?" · ครบแล้ว":""}${inBuy&&where==="inv"?" · อยู่ในรับซื้อ":""}" aria-label="${esc(it.name)} ${x.q} ชิ้น${got?" ครบแล้ว":""}" aria-pressed="${U.invMode==="check"?got:U.invMode==="buy"?inBuy:"false"}">${pic}${where==="inv"&&got?'<span class="slot-ok" aria-hidden="true">✓</span>':""}${where==="inv"&&inBuy?'<span class="slot-buy" aria-hidden="true">ซื้อ</span>':""}<span class="slot-n num">${qtyShort(x.q)}</span></button>`}
 function invPreview(raws){
-  const withImg=raws.filter(x=>{const s=imgSrc(x.k);return s&&!BAD.has(s)}),noImg=raws.filter(x=>!withImg.includes(x));
-  const slot=x=>{const it=ITEMS.get(x.k);return `<button class="slot" data-act="uses" data-k="${esc(x.k)}" title="${esc(it.name)} ×${x.q.toLocaleString()}" aria-label="${esc(it.name)} ${x.q} ชิ้น"><img src="${esc(imgSrc(x.k))}" alt="" loading="lazy" onerror="slotFail(this)"><span class="slot-n num">${qtyShort(x.q)}</span></button>`};
-  return `<div class="sec"><h3>คลังรวม <span class="hint">ของที่ต้องหาทั้งหมด ${raws.length} ชนิด · ชี้ค้างเพื่อดูชื่อ · กดเพื่อดูว่าใช้ทำอะไรได้</span></h3>
-   ${withImg.length?`<div class="inv"><div class="inv-head">คลังรวม<span class="num">${withImg.length} ชนิด</span></div><div class="inv-grid">${withImg.map(slot).join("")}</div></div>`:""}
-   ${noImg.length?`<div class="inv-miss"><div class="inv-miss-h">ยังไม่มีรูป <span class="num">${noImg.length} ชนิด</span></div><div class="used">${noImg.map(x=>{const it=ITEMS.get(x.k);return `<button data-act="uses" data-k="${esc(x.k)}">${badge(it,1)}${esc(it.name)} <b class="num">×${x.q.toLocaleString()}</b></button>`}).join("")}</div></div>`:""}
+  const withImg=raws.filter(x=>hasImg(x.k)),noImg=raws.filter(x=>!hasImg(x.k));
+  const got=raws.filter(x=>S.have.has(x.k)).length,miss=raws.length-got;
+  const buy=raws.filter(x=>S.buy.has(x.k));
+  const modeBar=`<div class="inv-tools"><span class="mode-seg" role="group" aria-label="โหมดคลังรวม">${INV_MODES.map(([v,l])=>`<button data-act="invmode" data-m="${v}" aria-pressed="${U.invMode===v}">${l}</button>`).join("")}</span><span class="inv-hint">${INV_HINT[U.invMode]}</span></div>`;
+  const chip=x=>{const it=ITEMS.get(x.k),g=S.have.has(x.k),p=S.buy.has(x.k);return `<button data-act="slot" data-k="${esc(x.k)}" class="${g?"got":""}${p?" picked":""}">${badge(it,1)}${esc(it.name)} <b class="num">×${x.q.toLocaleString()}</b>${g?' <span class="ok">✓</span>':""}${p?' <span class="buytag">ซื้อ</span>':""}</button>`};
+  const buyPanel=(buy.length||U.invMode==="buy")?`<div class="inv inv-buy" id="buyPanel"><div class="inv-head">รับซื้อ<span class="num">${buy.length} ชนิด</span></div>
+     ${buy.length?`<div class="inv-grid">${buy.map(x=>slotHtml(x,"buy")).join("")}</div>`:`<div class="empty-note" style="padding:18px">ยังว่างอยู่ กดช่องในคลังรวมเพื่อเลือกของที่จะรับซื้อ</div>`}</div>
+     <div class="ptools inv-actions"><button class="btn" data-act="buymiss">เพิ่มของที่ยังขาดทั้งหมด (${miss})</button>${buy.length?`<button class="btn pri" data-act="buysave">บันทึกเป็นรูป</button><button class="btn" data-act="buycopy">คัดลอกรูป</button><label class="chk"><input type="checkbox" id="buynames" ${U.buyNames?"checked":""}> ใส่ชื่อใต้ช่องในรูป</label><button class="btn ghost" data-act="buyclear">ล้างรับซื้อ</button>`:""}</div>`:"";
+  return `<div class="sec"><h3>คลังรวม <span class="hint">ของที่ต้องหาทั้งหมด ${raws.length} ชนิด · ครบ ${got} · ขาด ${miss}</span>${S.have.size||S.buy.size?`<span class="legend"><button class="chip" data-act="invreset">ล้างเช็กลิสต์</button></span>`:""}</h3>
+   ${modeBar}
+   <div class="inv-pair">
+   <div class="inv-col">${withImg.length?`<div class="inv"><div class="inv-head">คลังรวม<span class="num">ครบ ${raws.filter(x=>S.have.has(x.k)&&hasImg(x.k)).length}/${withImg.length}</span></div><div class="inv-grid">${withImg.map(x=>slotHtml(x,"inv")).join("")}</div></div>`:""}
+   ${noImg.length?`<div class="inv-miss"><div class="inv-miss-h">ยังไม่มีรูป <span class="num">${noImg.length} ชนิด</span></div><div class="used">${noImg.map(chip).join("")}</div></div>`:""}</div>
+   <div class="inv-col">${buyPanel}</div></div>
   </div>`}
+/* ---------- รับซื้อ: draw the buy list to a PNG (same look as the panel) ---------- */
+function loadImg(src){return new Promise(res=>{if(!src)return res(null);const im=new Image();if(/^https?:/i.test(src)&&!src.startsWith(location.origin))im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src})}
+async function buyCanvas(){
+  const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));
+  const items=Object.entries(acc).filter(([k])=>S.buy.has(k)).map(([k,q])=>({k,q,it:ITEMS.get(k)})).sort((a,b)=>a.it.name.localeCompare(b.it.name));
+  if(!items.length)return null;
+  try{await document.fonts.ready}catch(e){}
+  const css=getComputedStyle(document.documentElement),v=n=>css.getPropertyValue(n).trim();
+  const col={bg:v("--panel"),raise:v("--raise"),line:v("--line"),slot:v("--bg"),ink:v("--ink"),ink3:v("--ink3"),jil:v("--jil"),onink:v("--panel")};
+  const names=U.buyNames,cols=Math.min(6,items.length),S0=76,G=10,P=22,H=58,NH=names?30:0;
+  const rows=Math.ceil(items.length/cols),W=P*2+cols*S0+(cols-1)*G,Ht=H+P+rows*(S0+NH)+(rows-1)*G+P+18;
+  const dpr=2,c=document.createElement("canvas");c.width=W*dpr;c.height=Ht*dpr;const x=c.getContext("2d");x.scale(dpr,dpr);
+  const rr=(X,Y,w,h,r)=>{x.beginPath();x.roundRect?x.roundRect(X,Y,w,h,r):x.rect(X,Y,w,h)};
+  x.fillStyle=col.bg;rr(0,0,W,Ht,14);x.fill();x.strokeStyle=col.line;x.lineWidth=1;rr(.5,.5,W-1,Ht-1,14);x.stroke();
+  x.fillStyle=col.raise;x.fillRect(1,1,W-2,H-1);x.fillStyle=col.line;x.fillRect(0,H,W,1);
+  x.fillStyle=col.ink;x.font='700 26px "Chakra Petch","IBM Plex Sans Thai",sans-serif';x.textBaseline="middle";x.fillText("รับซื้อ",P,H/2+1);
+  x.fillStyle=col.ink3;x.font='500 13px "IBM Plex Sans Thai",sans-serif';x.textAlign="right";x.fillText(items.length+" ชนิด",W-P,H/2+1);x.textAlign="left";
+  const imgs=await Promise.all(items.map(o=>hasImg(o.k)?loadImg(imgSrc(o.k)):null));
+  items.forEach((o,i)=>{const cx=P+(i%cols)*(S0+G),cy=H+P+Math.floor(i/cols)*(S0+NH+G);
+    x.fillStyle=col.slot;rr(cx,cy,S0,S0,10);x.fill();x.strokeStyle=col.line;rr(cx+.5,cy+.5,S0-1,S0-1,10);x.stroke();
+    const im=imgs[i];if(im){const pad=9,sz=S0-pad*2,r=Math.min(sz/im.width,sz/im.height),w=im.width*r,h=im.height*r;x.imageSmoothingQuality="high";x.drawImage(im,cx+(S0-w)/2,cy+(S0-h)/2,w,h)}
+    else{x.fillStyle=col.ink3;x.font='700 20px "Chakra Petch",sans-serif';x.textAlign="center";x.fillText(initials(o.it.name),cx+S0/2,cy+S0/2);x.textAlign="left"}
+    const t=qtyShort(o.q);x.font='600 13px "IBM Plex Mono",monospace';const bw=Math.max(24,x.measureText(t).width+12),bh=22,bx=cx+S0-bw+4,by=cy+S0-bh+4;
+    x.fillStyle=col.bg;rr(bx-2,by-2,bw+4,bh+4,13);x.fill();x.fillStyle=col.ink;rr(bx,by,bw,bh,11);x.fill();
+    x.fillStyle=col.onink;x.textAlign="center";x.fillText(t,bx+bw/2,by+bh/2+1);x.textAlign="left";
+    if(names){x.fillStyle=col.ink;x.font='500 11px "IBM Plex Sans Thai",sans-serif';x.textAlign="center";let n=o.it.name;while(x.measureText(n).width>S0+G-2&&n.length>3)n=n.slice(0,-2)+"…";x.fillText(n,cx+S0/2,cy+S0+15);x.textAlign="left"}});
+  x.fillStyle=col.ink3;x.font='400 11px "IBM Plex Sans Thai",sans-serif';const d=new Date();x.fillText("Razan Craft Ledger · "+d.toLocaleDateString("th-TH"),P,Ht-16);
+  return c}
+async function buyExport(kind){
+  let c;try{c=await buyCanvas()}catch(e){toast("สร้างรูปไม่สำเร็จ");return}if(!c)return;
+  let blob;try{blob=await new Promise((res,rej)=>c.toBlob(b=>b?res(b):rej(),"image/png"))}catch(e){toast("สร้างรูปไม่สำเร็จ: มีรูปจากเว็บอื่นที่ไม่อนุญาตให้นำมาวาด");return}
+  if(kind==="copy"){try{await navigator.clipboard.write([new ClipboardItem({"image/png":blob})]);toast("คัดลอกรูปแล้ว วางในแชตได้เลย")}catch(e){toast("เบราว์เซอร์นี้คัดลอกรูปไม่ได้ ใช้ “บันทึกเป็นรูป” แทน")}return}
+  const d=new Date(),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="razan-buy-"+d.getFullYear()+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0")+".png";
+  document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),5000);toast("บันทึกรูปแล้ว")}
 // an image that fails to load moves its item to the "no image" list on the next render
 function slotFail(el){BAD.add(el.getAttribute("src"));clearTimeout(slotFail.t);slotFail.t=setTimeout(render,50)}
 
@@ -331,6 +382,13 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="close"){U.showDetail=false;render()}
   else if(a==="item"){const it=ITEMS.get(b.dataset.k);if(it.recipe){U.sel=it.recipe.id;U.tab=it.recipe.tab;U.qty=1;U.open=new Set();render._scrolled=false;render();document.getElementById("detail")?.scrollTo(0,0)}else openUses(it.k)}
   else if(a==="uses")openUses(b.dataset.k);
+  else if(a==="invmode"){U.invMode=b.dataset.m;render()}
+  else if(a==="slot"){const k=b.dataset.k;if(U.invMode==="check"){S.have.has(k)?S.have.delete(k):S.have.add(k);save();render()}else if(U.invMode==="buy"){S.buy.has(k)?S.buy.delete(k):S.buy.add(k);save();render()}else openUses(k)}
+  else if(a==="buymiss"){const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));let n=0;for(const k of Object.keys(acc))if(!S.have.has(k)&&!S.buy.has(k)){S.buy.add(k);n++}save();render();toast(n?"เพิ่ม "+n+" ชนิดในรับซื้อ":"ของที่ขาดอยู่ในรับซื้อครบแล้ว")}
+  else if(a==="buyclear"){if(b.dataset.sure){S.buy.clear();save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อยืนยัน";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างรับซื้อ"}},3000)}}
+  else if(a==="invreset"){if(b.dataset.sure){S.have.clear();S.buy.clear();save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อล้างทั้งเช็กลิสต์และรับซื้อ";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างเช็กลิสต์"}},3000)}}
+  else if(a==="buysave")buyExport("save");
+  else if(a==="buycopy")buyExport("copy");
   else if(a==="usel"){U.useSel=b.dataset.k;U.useShow=true;if(U.view!=="uses"){U.view="uses";render._scrolled=false}render();document.getElementById("detail")?.scrollTo(0,0)}
   else if(a==="uclose"){U.useShow=false;render()}
   else if(a==="ucat"){U.useCat=b.dataset.t;render()}
@@ -360,6 +418,7 @@ document.addEventListener("input",e=>{const t=e.target;
   else if(t.id==="q"){U.q=t.value;render()}
   else if(t.id==="pbq"){U.pbQ=t.value;render()}
   else if(t.id==="uq"){U.useQ=t.value;render()}
+  else if(t.id==="buynames"){U.buyNames=t.checked}
   else if(t.id==="qty"){const v=parseInt(t.value);if(v>0){U.qty=v;render()}}
   else if(t.dataset.qi!=null){const v=parseInt(t.value);if(v>0){S.queue[+t.dataset.qi].n=v;save();render()}}});
 document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.getElementById("modal-root").innerHTML)document.getElementById("modal-root").innerHTML="";else if(U.view==="uses"&&U.useShow){U.useShow=false;render()}else if(U.showDetail){U.showDetail=false;render()}}});

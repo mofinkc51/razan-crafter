@@ -158,6 +158,30 @@ main{flex:1;min-height:0;display:grid}
 .slot:hover{border-color:var(--jil)}
 .slot img{width:100%;height:100%;object-fit:contain;image-rendering:auto}
 .slot-n{position:absolute;right:-3px;bottom:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--ink);color:var(--panel);font-size:11px;font-weight:600;line-height:20px;text-align:center;box-shadow:0 0 0 2px var(--panel)}
+.inv-tools{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}
+.mode-seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--raise)}
+.mode-seg button{border:0;background:none;padding:6px 12px;font-size:13px;color:var(--ink2);white-space:nowrap}
+.mode-seg button+button{border-left:1px solid var(--line)}
+.mode-seg button[aria-pressed="true"]{background:var(--forge);color:var(--panel);font-weight:600}
+.inv-hint{font-size:12px;color:var(--ink3)}
+.inv-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start}
+.inv-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.inv-pair .inv{max-width:none}
+.inv-buy{border-color:var(--jil)}
+.inv-buy .inv-head{background:var(--jil-soft);color:var(--jil)}
+.inv-actions{gap:8px}
+.chk{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--ink2)}
+.slot.got img,.slot.got .slot-ini{opacity:.3}
+.slot.got{border-color:var(--ok);background:var(--ok-soft)}
+.slot.got .slot-n{background:var(--ok)}
+.slot.picked{border-color:var(--jil);box-shadow:inset 0 0 0 1px var(--jil)}
+.slot-ok{position:absolute;top:2px;left:4px;font:700 14px/1 var(--f-body);color:var(--ok)}
+.slot-buy{position:absolute;top:-6px;left:-6px;padding:1px 5px;border-radius:5px;background:var(--jil);color:var(--panel);font:600 10px/1.4 var(--f-body)}
+.slot-ini{font:700 15px var(--f-disp);color:var(--ink3)}
+.used button.got{border-color:var(--ok);background:var(--ok-soft)}
+.used button.picked{border-color:var(--jil)}
+.used .ok{color:var(--ok);font-weight:700}
+.used .buytag{font-size:10px;font-weight:600;padding:0 5px;border-radius:4px;background:var(--jil);color:var(--panel)}
 .inv-miss{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .inv-miss-h{font-size:12px;color:var(--ink3)}
 .inv-miss .used b{font-weight:600;color:var(--ink2)}
