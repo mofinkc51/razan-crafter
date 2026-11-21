@@ -67,17 +67,17 @@ function expand(rec,n,acc,crafts){crafts[rec.k]=(crafts[rec.k]||0)+n;
     if(e.use==="craft"&&it.recipe){crafts[g.k]=(crafts[g.k]||0)+q;walk(it.recipe.ing,q,[...stack,g.k])}else acc[g.k]=(acc[g.k]||0)+q}})(rec.ing,n,[rec.k])}
 
 /* ---------- ui state ---------- */
-let U={view:"recipes",tab:"Wolf",q:"",type:"",sel:0,qty:1,open:new Set(),pbFilter:"all",pbQ:"",showDetail:false};
-try{const s=JSON.parse(localStorage.getItem(LS+"-ui")||"{}");Object.assign(U,{tab:s.tab||U.tab,sel:s.sel??U.sel,view:s.view||U.view})}catch(e){}
-const saveUI=()=>{try{localStorage.setItem(LS+"-ui",JSON.stringify({tab:U.tab,sel:U.sel,view:U.view}))}catch(e){}};
+let U={view:"recipes",tab:"Wolf",q:"",type:"",sel:0,qty:1,open:new Set(),pbFilter:"all",pbQ:"",showDetail:false,useSel:"",useQ:"",useCat:"all",useTab:"",useDirect:false,useShow:false};
+try{const s=JSON.parse(localStorage.getItem(LS+"-ui")||"{}");Object.assign(U,{tab:s.tab||U.tab,sel:s.sel??U.sel,view:s.view||U.view,useSel:s.useSel||""})}catch(e){}
+const saveUI=()=>{try{localStorage.setItem(LS+"-ui",JSON.stringify({tab:U.tab,sel:U.sel,view:U.view,useSel:U.useSel}))}catch(e){}};
 
 function render(){memo=new Map();
   const sameView=render._view===U.view;render._view=U.view;
   const keep=sameView?["rail","list","detail","page"].map(c=>{const el=document.querySelector("#main ."+c);return el?[c,el.scrollTop,el.scrollLeft]:null}).filter(Boolean):[];
   const tblX=sameView?[...document.querySelectorAll("#main .tbl")].map(t=>t.scrollLeft):[];const focus=document.activeElement?.dataset?.f;const caret=document.activeElement?.selectionStart;
   document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===U.view));
-  const main=document.getElementById("main");main.className=U.view==="recipes"?"v-recipes":"v-other";
-  main.innerHTML=U.view==="recipes"?viewRecipes():U.view==="prices"?viewPrices():viewQueue();
+  const main=document.getElementById("main");main.className=U.view==="recipes"?"v-recipes":U.view==="uses"?"v-uses":"v-other";
+  main.innerHTML=U.view==="recipes"?viewRecipes():U.view==="uses"?viewUses():U.view==="prices"?viewPrices():viewQueue();
   for(const [c,t,l] of keep){const el=main.querySelector("."+c);if(el){el.scrollTop=t;el.scrollLeft=l}}
   main.querySelectorAll(".tbl").forEach((t,i)=>{if(tblX[i])t.scrollLeft=tblX[i]});
   const total=ITEMS.size,priced=[...ITEMS.keys()].filter(k=>S.prices[k]!=null&&S.prices[k]!=="").length;
@@ -118,7 +118,7 @@ function viewDetail(){
   <button class="btn ghost back" data-act="close">← กลับไปที่รายการ</button>
   <div class="dhead">${badge(out)}<div class="dtitle"><h2>${esc(r.name)}</h2><div class="crumbs"><span>${esc(TAB_TH[r.tab])}</span>${r.group?`<span>· ${esc(r.group)}</span>`:""}${r.type?`<span class="tag">${TYPE_TH[r.type]}</span>`:""}${r.src==="w"?'<span class="tag wiki">สูตรจาก wiki</span>':""}</div></div>
    <div class="qty" title="จำนวนที่จะคราฟ"><button data-act="qty" data-d="-1" aria-label="ลด">−</button><input id="qty" data-f="qty" class="num" inputmode="numeric" value="${n}" aria-label="จำนวน"><button data-act="qty" data-d="1" aria-label="เพิ่ม">+</button></div>
-   ${uplBtn(r.k,imgSrc(r.k)?"เปลี่ยนรูป":"เพิ่มรูป")}<button class="btn pri" data-act="addq">${inQ?"เพิ่มอีก "+n+" ในรายการ":"เพิ่มในรายการคราฟ"}</button></div>
+   ${out.usedIn.size?`<button class="btn" data-act="uses" data-k="${esc(r.k)}">ใช้ทำอะไรต่อได้</button>`:""}${uplBtn(r.k,imgSrc(r.k)?"เปลี่ยนรูป":"เพิ่มรูป")}<button class="btn pri" data-act="addq">${inQ?"เพิ่มอีก "+n+" ในรายการ":"เพิ่มในรายการคราฟ"}</button></div>
   <div class="totals">
     <div><label>ต้นทุนรวม ${n>1?"("+n+" ชิ้น)":""}</label><div class="big">${fmt(total)} <span style="font-size:14px">Jil</span></div><div class="sub">${n>1?"ชิ้นละ "+fmt(total/n)+" Jil":"ต่อ 1 ชิ้น"}${missing.length?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${margin}</div>
     <div><label>วัตถุดิบที่ต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้นรวม</div></div>
@@ -146,7 +146,70 @@ function tree(ings,mult,stack,lvl,path){let h="";
     if(can&&opened)h+=tree(it.recipe.ing,q,[...stack,g.k],lvl+1,p)}
   return h}
 function usedInBlock(it){const ids=[...it.usedIn];if(!ids.length)return "";
-  return `<div class="sec"><h3>${esc(it.name)} ใช้ทำอะไรได้อีก <span class="hint">${ids.length} สูตร</span></h3><div class="used">${ids.slice(0,60).map(id=>{const r=RECIPES[id];return `<button data-act="sel" data-id="${id}">${badge(ITEMS.get(r.k),1)}${esc(r.name)}</button>`}).join("")}</div></div>`}
+  return `<div class="sec"><h3>${esc(it.name)} ใช้ทำอะไรได้อีก <span class="hint">ใช้ตรง ${ids.length} สูตร · รวมทางอ้อม ${reach(it.k).size} สูตร</span><span class="legend"><button class="chip" data-act="uses" data-k="${esc(it.k)}">ดูทั้งหมดรวมทางอ้อม →</button></span></h3><div class="used">${ids.slice(0,60).map(id=>{const r=RECIPES[id];return `<button data-act="sel" data-id="${id}">${badge(ITEMS.get(r.k),1)}${esc(r.name)}</button>`}).join("")}</div></div>`}
+
+/* ---------- reverse lookup: what an item can be crafted into ---------- */
+const REACH=new Map(),NEED=new Map();
+// every recipe that consumes k, directly (depth 1) or through crafted intermediates; path = items from k up to what that recipe consumes
+function reach(k){if(REACH.has(k))return REACH.get(k);
+  const out=new Map(),seen=new Set([k]);let frontier=[[k,[k]]],depth=1;
+  while(frontier.length&&depth<15){const next=[];
+    for(const [x,path] of frontier)for(const id of ITEMS.get(x).usedIn){if(out.has(id))continue;const r=RECIPES[id];out.set(id,{depth,path});
+      if(!seen.has(r.k)){seen.add(r.k);next.push([r.k,[...path,r.k]])}}
+    frontier=next;depth++}
+  REACH.set(k,out);return out}
+// how many k one craft of rec consumes when every intermediate is crafted yourself
+function needOf(rec,k,stack){const key=rec.id+"|"+k;if(NEED.has(key))return NEED.get(key);let n=0;
+  for(const g of rec.ing){if(g.k===k)n+=g.q;else{const it=ITEMS.get(g.k);if(it.recipe&&it.recipe.id!==rec.id&&!stack.includes(g.k))n+=g.q*needOf(it.recipe,k,[...stack,g.k])}}
+  NEED.set(key,n);return n}
+const USE_CATS=[["all","ทั้งหมด"],["base","วัตถุดิบพื้นฐาน"],["craft","คราฟได้"],["gear","อุปกรณ์"]];
+function useList(){const q=norm(U.useQ);
+  return [...ITEMS.values()].filter(it=>it.usedIn.size>0&&(!q||it.k.includes(q))&&(U.useCat==="all"||(U.useCat==="base"&&!it.recipe)||(U.useCat==="craft"&&it.recipe&&it.cat==="m")||(U.useCat==="gear"&&"wac".includes(it.cat))))
+    .sort((a,b)=>reach(b.k).size-reach(a.k).size||a.name.localeCompare(b.name))}
+function viewUses(){
+  const list=useList();
+  if(!ITEMS.has(U.useSel)&&list[0]&&window.innerWidth>1000)U.useSel=list[0].k;
+  const rows=list.map(it=>`<button class="row" data-act="usel" data-k="${esc(it.k)}" aria-current="${it.k===U.useSel}">${badge(it)}<span class="nm">${esc(it.name)}</span><span class="cost" title="ใช้ตรง / รวมทางอ้อม">${it.usedIn.size} · ${reach(it.k).size}</span></button>`).join("");
+  return `<section class="index"><div class="search"><input class="inp" id="uq" data-f="uq" type="search" placeholder="ค้นหาวัตถุดิบหรือไอเทม…" value="${esc(U.useQ)}" autocomplete="off">
+    <div class="chips">${USE_CATS.map(([v,l])=>`<button class="chip" data-act="ucat" data-t="${v}" aria-pressed="${U.useCat===v}">${l}</button>`).join("")}</div>
+    <div style="font-size:11px;color:var(--ink3)">ตัวเลขขวา = ใช้ตรง · รวมทางอ้อม (จำนวนสูตร)</div></div>
+    <div class="list">${rows||`<div class="empty-note">ไม่พบไอเทมที่ตรงกับ “${esc(U.useQ)}”</div>`}</div></section>
+    <section class="detail" id="detail" ${U.useShow?"":'data-closed="1"'}>${viewUseDetail()}</section>`}
+function viewUseDetail(){
+  const it=ITEMS.get(U.useSel);if(!it)return `<div class="empty-note">เลือกวัตถุดิบทางซ้ายเพื่อดูว่าใช้คราฟอะไรได้บ้าง</div>`;
+  const R=reach(it.k);
+  const all=[...R.entries()].map(([id,info])=>{const r=RECIPES[id];return{r,...info,need:needOf(r,it.k,[r.k])}});
+  const ti=t=>TAB_ORDER.indexOf(t);
+  const tabCount={};all.forEach(x=>tabCount[x.r.tab]=(tabCount[x.r.tab]||0)+1);
+  if(U.useTab&&!tabCount[U.useTab])U.useTab="";
+  const shown=all.filter(x=>(!U.useTab||x.r.tab===U.useTab)&&(!U.useDirect||x.depth===1))
+    .sort((a,b)=>ti(a.r.tab)-ti(b.r.tab)||a.depth-b.depth||a.r.id-b.r.id);
+  const direct=all.filter(x=>x.depth===1).length,maxDepth=all.reduce((m,x)=>Math.max(m,x.depth),0);
+  const p=S.prices[it.k],has=p!=null&&p!=="";
+  const src=it.recipe?`<div class="crumbs" style="margin-top:6px">คราฟได้จาก: ${it.recipe.ing.map(g=>`<a class="ulink" data-act="usel" data-k="${esc(g.k)}">${esc(ITEMS.get(g.k).name)}</a> ×${g.q}`).join(" · ")}</div>`:"";
+  let body="",grp=null;
+  for(const x of shown){
+    if(x.r.tab!==grp){grp=x.r.tab;body+=`<div class="tr gh"><span>${esc(TAB_TH[grp])}</span><span></span><span></span><span></span><span></span><span class="r num">${tabCount[grp]} สูตร</span></div>`}
+    const via=x.depth===1?`<span class="direct">ใช้ตรง</span>`:x.path.slice(1).map(k=>`<a class="ulink" data-act="usel" data-k="${esc(k)}">${esc(ITEMS.get(k).name)}</a>`).join(" → ");
+    body+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(x.r.k),1)}<a data-act="openrec" data-id="${x.r.id}">${esc(x.r.name)}</a></span>
+      <span style="font-size:12px;color:var(--ink2)">${x.r.type?TYPE_TH[x.r.type]:esc(x.r.group||"")}</span>
+      <span class="r num" title="ขั้นที่">${x.depth}</span><span class="r num">×${x.need.toLocaleString()}</span>
+      <span class="sum ${has?"":"miss"}">${has?fmt(+p*x.need):"—"}</span><span class="path">${via}</span></div>`}
+  return `<div class="dwrap">
+  <button class="btn ghost back" data-act="uclose">← กลับไปที่รายการ</button>
+  <div class="dhead">${badge(it)}<div class="dtitle"><h2>${esc(it.name)}</h2><div class="crumbs"><span class="tag">${CAT_TH[it.cat]||"วัตถุดิบ"}</span>${it.recipe?"<span>คราฟได้</span>":"<span>ซื้อ/ฟาร์ม</span>"}</div>${src}</div>
+   ${it.recipe?`<button class="btn" data-act="openrec" data-id="${it.recipe.id}">เปิดสูตรของชิ้นนี้</button>`:""}</div>
+  <div class="totals">
+    <div><label>ใช้คราฟต่อได้ทั้งหมด</label><div class="big">${all.length} <span style="font-size:14px">สูตร</span></div><div class="sub">ใช้ตรง ${direct} · ทางอ้อม ${all.length-direct}</div></div>
+    <div><label>อาชีพ/หมวดที่ใช้</label><div class="mid">${Object.keys(tabCount).length}</div><div class="sub">${Object.keys(tabCount).sort((a,b)=>ti(a)-ti(b)).slice(0,4).map(t=>TAB_TH[t].split(" ·")[0]).join(", ")}${Object.keys(tabCount).length>4?"…":""}</div></div>
+    <div><label>ไกลสุด</label><div class="mid">${maxDepth} ขั้น</div><div class="sub">นับจากชิ้นนี้ถึงสูตรปลายทาง</div></div>
+    <div><label>ราคา/ชิ้น (Jil)</label><input class="pin num ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="up-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?p:""}" style="margin-top:4px"><div class="sub">ใช้คำนวณคอลัมน์มูลค่า</div></div>
+  </div>
+  <div class="sec uses"><h3>${esc(it.name)} ใช้คราฟอะไรได้บ้าง <span class="hint">“ใช้ต่อ 1 ชิ้น” นับรวมทุกขั้น ถ้าคราฟของกลางทางเอง · กดชื่อของกลางทางเพื่อไล่ต่อ</span></h3>
+   <div class="chips"><button class="chip" data-act="utab" data-t="" aria-pressed="${!U.useTab}">ทุกหมวด ${all.length}</button>${Object.keys(tabCount).sort((a,b)=>ti(a)-ti(b)).map(t=>`<button class="chip" data-act="utab" data-t="${t}" aria-pressed="${U.useTab===t}">${esc(TAB_TH[t].split(" ·")[0])} ${tabCount[t]}</button>`).join("")}
+    <span style="flex:1"></span><button class="chip" data-act="udirect" aria-pressed="${U.useDirect}">เฉพาะใช้ตรง</button></div>
+   ${all.length?`<div class="tbl"><div class="tr h"><span>สูตรปลายทาง</span><span>ประเภท</span><span class="r">ขั้น</span><span class="r">ใช้ต่อ 1 ชิ้น</span><span class="r">มูลค่า</span><span>เส้นทาง</span></div>${body||'<div class="empty-note">ไม่มีสูตรในตัวกรองนี้</div>'}</div>`:`<div class="empty-note">${esc(it.name)} ไม่ได้ใช้คราฟอะไรต่อ</div>`}</div>
+  </div>`}
 
 /* ---------- price book ---------- */
 function viewPrices(){
@@ -162,7 +225,7 @@ function viewPrices(){
    <div class="tbl"><div class="tr h"><span>ไอเทม</span><span>ประเภท</span><span class="r">ใช้ใน</span><span class="r">ต้นทุนคราฟ</span><span class="r">ราคา/ชิ้น (Jil)</span><span>เทียบ</span><span>รูป</span></div>
    ${rows.slice(0,400).map(it=>{const has=S.prices[it.k]!=null&&S.prices[it.k]!=="";let cc="",cmp="";
      if(it.recipe){const c=recipeCost(it.recipe);cc=c.miss?(c.cost?"≥"+fmt(c.cost):"—"):fmt(c.cost);if(has&&!c.miss){const d=c.cost-+S.prices[it.k];cmp=d<0?`<span class="cheaper ok">คราฟถูกกว่า</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า</span>`:""}}
-     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size||""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span><input class="pin ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="pb-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?S.prices[it.k]:""}" aria-label="ราคา ${esc(it.name)}"></span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
+     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span><input class="pin ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="pb-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?S.prices[it.k]:""}" aria-label="ราคา ${esc(it.name)}"></span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
    ${rows.length>400?`<div class="empty-note">แสดง 400 รายการแรก ใช้ช่องค้นหาเพื่อหาที่เหลือ</div>`:""}${!rows.length?`<div class="empty-note">ไม่มีไอเทมในตัวกรองนี้</div>`:""}</div></div></section>`}
 
 /* ---------- queue ---------- */
@@ -244,6 +307,7 @@ document.addEventListener("change",e=>{const t=e.target;
 /* ---------- events ---------- */
 function toast(t){const el=document.createElement("div");el.className="toast";el.textContent=t;document.body.appendChild(el);setTimeout(()=>el.remove(),1800)}
 async function copy(text,ta){try{await navigator.clipboard.writeText(text);toast("คัดลอกแล้ว")}catch(e){if(ta){ta.focus();ta.select()}toast("คัดลอกอัตโนมัติไม่ได้ กด Ctrl+C")}}
+function openUses(k){U.view="uses";U.useSel=k;U.useShow=true;U.useTab="";U.useQ="";render._scrolled=false;render();document.getElementById("detail")?.scrollTo(0,0)}
 const listText=acc=>Object.entries(acc).map(([k,q])=>`${ITEMS.get(k).name} x${q}`).join("\n");
 document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(!b)return;const a=b.dataset.act;
   if(a==="theme"){const order=["dark","light","auto"];setTheme(order[(order.indexOf(curTheme())+1)%3]);return}
@@ -252,7 +316,13 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="type"){U.type=b.dataset.t;render()}
   else if(a==="sel"||a==="openrec"){U.sel=+b.dataset.id;U.qty=1;U.open=new Set();U.showDetail=true;if(a==="openrec"){U.view="recipes";U.tab=RECIPES[U.sel].tab;render._scrolled=false}render();document.getElementById("detail")?.scrollTo(0,0)}
   else if(a==="close"){U.showDetail=false;render()}
-  else if(a==="item"){const it=ITEMS.get(b.dataset.k);if(it.recipe){U.sel=it.recipe.id;U.tab=it.recipe.tab;U.qty=1;U.open=new Set();render._scrolled=false;render();document.getElementById("detail")?.scrollTo(0,0)}else{U.view="prices";U.pbQ=it.name;U.pbFilter="all";render()}}
+  else if(a==="item"){const it=ITEMS.get(b.dataset.k);if(it.recipe){U.sel=it.recipe.id;U.tab=it.recipe.tab;U.qty=1;U.open=new Set();render._scrolled=false;render();document.getElementById("detail")?.scrollTo(0,0)}else openUses(it.k)}
+  else if(a==="uses")openUses(b.dataset.k);
+  else if(a==="usel"){U.useSel=b.dataset.k;U.useShow=true;if(U.view!=="uses"){U.view="uses";render._scrolled=false}render();document.getElementById("detail")?.scrollTo(0,0)}
+  else if(a==="uclose"){U.useShow=false;render()}
+  else if(a==="ucat"){U.useCat=b.dataset.t;render()}
+  else if(a==="utab"){U.useTab=b.dataset.t;render()}
+  else if(a==="udirect"){U.useDirect=!U.useDirect;render()}
   else if(a==="qty"){U.qty=Math.max(1,(U.qty|0)+ +b.dataset.d);render()}
   else if(a==="tw"){const p=b.dataset.p;U.open.has(p)?U.open.delete(p):U.open.add(p);render()}
   else if(a==="mode"){const k=b.dataset.k,m=b.dataset.m;if(m==="auto")delete S.mode[k];else S.mode[k]=m;save();render()}
@@ -276,9 +346,10 @@ document.addEventListener("input",e=>{const t=e.target;
   if(t.dataset.price!=null){const v=t.value.replace(/[, ]/g,"");if(v===""||isNaN(+v))delete S.prices[t.dataset.price];else S.prices[t.dataset.price]=+v;save();render()}
   else if(t.id==="q"){U.q=t.value;render()}
   else if(t.id==="pbq"){U.pbQ=t.value;render()}
+  else if(t.id==="uq"){U.useQ=t.value;render()}
   else if(t.id==="qty"){const v=parseInt(t.value);if(v>0){U.qty=v;render()}}
   else if(t.dataset.qi!=null){const v=parseInt(t.value);if(v>0){S.queue[+t.dataset.qi].n=v;save();render()}}});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.getElementById("modal-root").innerHTML)document.getElementById("modal-root").innerHTML="";else if(U.showDetail){U.showDetail=false;render()}}});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.getElementById("modal-root").innerHTML)document.getElementById("modal-root").innerHTML="";else if(U.view==="uses"&&U.useShow){U.useShow=false;render()}else if(U.showDetail){U.showDetail=false;render()}}});
 // detail sheet visibility on narrow screens
-const st=document.createElement("style");st.textContent="@media (max-width:1000px){.v-recipes .detail[data-closed]{display:none}}";document.head.appendChild(st);
+const st=document.createElement("style");st.textContent="@media (max-width:1000px){.v-recipes .detail[data-closed],.v-uses .detail[data-closed]{display:none}}";document.head.appendChild(st);
 render();

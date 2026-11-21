@@ -57,6 +57,15 @@ header.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background
 main{flex:1;min-height:0;display:grid}
 .v-recipes{grid-template-columns:200px minmax(260px,340px) minmax(0,1fr)}
 .v-other{grid-template-columns:minmax(0,1fr)}
+.v-uses{grid-template-columns:minmax(260px,340px) minmax(0,1fr)}
+.uses .chips{align-items:center}
+.uses .tr{grid-template-columns:minmax(170px,1.1fr) 110px 44px 92px 96px minmax(200px,1.6fr);min-width:820px}
+.uses .tr.gh{background:var(--bg);font:600 12px var(--f-disp);letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);padding-block:7px}
+.path{font-size:12px;color:var(--ink2);line-height:1.45}
+.ulink{color:var(--forge);cursor:pointer;text-decoration:none}
+.ulink:hover{text-decoration:underline}
+.direct{font-size:11px;font-weight:600;padding:1px 7px;border-radius:4px;background:var(--forge-soft);color:var(--forge)}
+.views{max-width:100%;overflow-x:auto}
 /* rail */
 .rail{border-right:1px solid var(--line);overflow:auto;padding:12px 10px;display:flex;flex-direction:column;gap:2px;background:var(--panel)}
 .rail h6{font:600 11px var(--f-disp);letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);margin:10px 8px 4px}
@@ -159,7 +168,7 @@ main{flex:1;min-height:0;display:grid}
 .modal .box{background:var(--panel);border-radius:12px;padding:20px;width:min(560px,100%);display:flex;flex-direction:column;gap:12px}
 .modal textarea{width:100%;min-height:200px;border:1px solid var(--line);border-radius:8px;background:var(--raise);padding:10px;font:12px/1.4 var(--f-num)}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--panel);padding:8px 16px;border-radius:999px;font-size:13px;z-index:30}
-@media (max-width:1000px){.v-recipes{grid-template-columns:170px minmax(0,1fr)}.v-recipes .detail{position:fixed;inset:0;z-index:15;background:var(--bg);padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}.back{display:inline-flex}}
+@media (max-width:1000px){.v-uses{grid-template-columns:minmax(0,1fr)}.v-uses .detail{position:fixed;inset:0;z-index:15;background:var(--bg);padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}.v-recipes{grid-template-columns:170px minmax(0,1fr)}.v-recipes .detail{position:fixed;inset:0;z-index:15;background:var(--bg);padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(40px + env(safe-area-inset-bottom,0px))}.back{display:inline-flex}}
 @media (max-width:640px){
   .v-recipes{grid-template-columns:minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
   .rail{flex-direction:row;overflow-x:auto;border-right:0;border-bottom:1px solid var(--line);padding:8px 12px}
