@@ -228,6 +228,18 @@ function viewPrices(){
      return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span><input class="pin ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="pb-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?S.prices[it.k]:""}" aria-label="ราคา ${esc(it.name)}"></span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
    ${rows.length>400?`<div class="empty-note">แสดง 400 รายการแรก ใช้ช่องค้นหาเพื่อหาที่เหลือ</div>`:""}${!rows.length?`<div class="empty-note">ไม่มีไอเทมในตัวกรองนี้</div>`:""}</div></div></section>`}
 
+/* ---------- inventory-style preview of everything to gather ---------- */
+const qtyShort=n=>n>=10000?(Math.round(n/100)/10).toLocaleString("en-US")+"k":n.toLocaleString("en-US");
+function invPreview(raws){
+  const withImg=raws.filter(x=>{const s=imgSrc(x.k);return s&&!BAD.has(s)}),noImg=raws.filter(x=>!withImg.includes(x));
+  const slot=x=>{const it=ITEMS.get(x.k);return `<button class="slot" data-act="uses" data-k="${esc(x.k)}" title="${esc(it.name)} ×${x.q.toLocaleString()}" aria-label="${esc(it.name)} ${x.q} ชิ้น"><img src="${esc(imgSrc(x.k))}" alt="" loading="lazy" onerror="slotFail(this)"><span class="slot-n num">${qtyShort(x.q)}</span></button>`};
+  return `<div class="sec"><h3>คลังรวม <span class="hint">ของที่ต้องหาทั้งหมด ${raws.length} ชนิด · ชี้ค้างเพื่อดูชื่อ · กดเพื่อดูว่าใช้ทำอะไรได้</span></h3>
+   ${withImg.length?`<div class="inv"><div class="inv-head">คลังรวม<span class="num">${withImg.length} ชนิด</span></div><div class="inv-grid">${withImg.map(slot).join("")}</div></div>`:""}
+   ${noImg.length?`<div class="inv-miss"><div class="inv-miss-h">ยังไม่มีรูป <span class="num">${noImg.length} ชนิด</span></div><div class="used">${noImg.map(x=>{const it=ITEMS.get(x.k);return `<button data-act="uses" data-k="${esc(x.k)}">${badge(it,1)}${esc(it.name)} <b class="num">×${x.q.toLocaleString()}</b></button>`}).join("")}</div></div>`:""}
+  </div>`}
+// an image that fails to load moves its item to the "no image" list on the next render
+function slotFail(el){BAD.add(el.getAttribute("src"));clearTimeout(slotFail.t);slotFail.t=setTimeout(render,50)}
+
 /* ---------- queue ---------- */
 function viewQueue(){
   if(!S.queue.length)return `<section class="page"><div class="pwrap"><div class="intro"><div><h2>รายการคราฟ</h2><p>ยังไม่มีอะไรในรายการ เปิดสูตรที่ต้องการแล้วกด “เพิ่มในรายการคราฟ” ระบบจะรวมวัตถุดิบทุกสูตรให้เป็นรายการเดียวพร้อมต้นทุนรวม</p></div></div><div><button class="btn pri" data-act="view" data-v="recipes">ไปที่สูตรคราฟ</button></div></div></section>`;
@@ -243,7 +255,8 @@ function viewQueue(){
    <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${Object.values(crafts).reduce((s,x)=>s+x,0)}</div><div class="sub">${Object.keys(crafts).length} สูตร</div></div>
    <div><label>ยังไม่มีราคา</label><div class="mid ${miss?"warn":""}">${miss}</div><div class="sub">${miss?"กรอกด้านล่าง":"ครบ"}</div></div></div>
   <div class="sec q"><h3>สูตรในรายการ</h3><div class="tbl"><div class="tr h"><span>ไอเทม</span><span>จำนวน</span><span class="r">ต้นทุน</span><span></span></div>${rows}</div></div>
-  <div class="sec shop"><h3>วัตถุดิบรวม</h3><div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
+  ${invPreview(raws)}
+  <div class="sec shop"><h3>วัตถุดิบรวม <span class="hint">ตารางราคา</span></h3><div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
   ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}${esc(it.name)}</span><span class="r num">×${x.q.toLocaleString()}</span><span><input class="pin ${x.has?"":"empty"}" data-price="${esc(x.k)}" data-f="q-${esc(x.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${x.has?S.prices[x.k]:""}"></span><span class="sum ${x.has?"":"miss"}">${x.has?fmt(x.sub):"—"}</span><span class="share"><i style="width:${total?x.sub/total*100:0}%"></i></span></div>`}).join("")}</div></div></div></section>`}
 
 /* ---------- images ---------- */

@@ -150,6 +150,17 @@ main{flex:1;min-height:0;display:grid}
 .shop .tr{grid-template-columns:minmax(160px,1fr) 80px 118px 120px minmax(90px,140px);min-width:600px}
 .share{height:6px;border-radius:3px;background:var(--line2);overflow:hidden}
 .share i{display:block;height:100%;background:var(--jil)}
+.inv{border:1px solid var(--line);border-radius:10px;background:var(--panel);overflow:hidden;max-width:560px}
+.inv-head{display:flex;justify-content:space-between;align-items:baseline;padding:8px 14px;background:var(--raise);border-bottom:1px solid var(--line);font:600 14px var(--f-disp)}
+.inv-head .num{font-size:12px;font-weight:400;color:var(--ink3)}
+.inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px;padding:12px}
+.slot{position:relative;aspect-ratio:1;max-width:100%;border:1px solid var(--line);border-radius:8px;background:var(--bg);padding:6px;display:grid;place-items:center;cursor:pointer}
+.slot:hover{border-color:var(--jil)}
+.slot img{width:100%;height:100%;object-fit:contain;image-rendering:auto}
+.slot-n{position:absolute;right:-3px;bottom:-3px;min-width:20px;height:20px;padding:0 5px;border-radius:999px;background:var(--ink);color:var(--panel);font-size:11px;font-weight:600;line-height:20px;text-align:center;box-shadow:0 0 0 2px var(--panel)}
+.inv-miss{display:flex;flex-direction:column;gap:6px;margin-top:4px}
+.inv-miss-h{font-size:12px;color:var(--ink3)}
+.inv-miss .used b{font-weight:600;color:var(--ink2)}
 .used{display:flex;flex-wrap:wrap;gap:6px}
 .used button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--raise);border-radius:6px;padding:3px 8px 3px 4px;font-size:12px}
 .empty-note{color:var(--ink3);padding:30px 16px;text-align:center}
