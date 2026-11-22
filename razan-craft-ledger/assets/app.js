@@ -30,9 +30,9 @@ const uplBtn=(k,label)=>ASSETS?`<label class="upl">${label}<input type="file" ac
 
 /* ---------- state ---------- */
 const LS="razan-ledger-v1";
-let S={prices:{},mode:{},queue:[],have:new Set(),buy:new Set()};
-function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[])}
-const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],at:Date.now()});
+let S={prices:{},cur:{},mode:{},queue:[],have:new Set(),buy:new Set(),guar:true,rate:null};
+function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[]);S.cur=Object.fromEntries(obj.cur||[]);S.guar=obj.guar===undefined?true:!!obj.guar;S.rate=+obj.rate>0?+obj.rate:null}
+const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],cur:Object.entries(S.cur),guar:S.guar,rate:S.rate,at:Date.now()});
 try{const s=localStorage.getItem(LS);if(s)load(JSON.parse(s))}catch(e){}
 let dbDoc=null,saveT=null;
 function save(){try{localStorage.setItem(LS,JSON.stringify(dump()))}catch(e){}clearTimeout(saveT);saveT=setTimeout(async()=>{const d=dump();
@@ -49,19 +49,46 @@ const IDB=(()=>{let p;const open=()=>p||(p=new Promise((res,rej)=>{const r=index
     for(const [n,pth] of Object.entries(m)){const k=fileKey(n);if(ITEMS.has(k)&&typeof pth==="string")REPO_IMG[k]=enc(pth)}}catch(e){}}
   render()})();
 
+/* ---------- money: Jil (in-game) and ฿ (real money) are always kept apart ---------- */
+const GUAR_FEE=120; // hidden Jil cost of every crafted piece when the guarantee is used
+const M0=()=>({j:0,b:0});
+const madd=(a,m,f=1)=>({j:a.j+m.j*f,b:a.b+m.b*f});
+const mul=(m,f)=>({j:m.j*f,b:m.b*f});
+const mnz=m=>!!(m.j||m.b);
+const curOf=k=>S.cur[k]==="b"?"b":"j";
+const priceOf=k=>{const p=S.prices[k];return p!=null&&p!==""?+p:null};
+const pmoney=k=>{const p=priceOf(k);return p==null?null:curOf(k)==="b"?{j:0,b:p}:{j:p,b:0}};
+const rate=()=>S.rate>0?S.rate:null; // Jil per 1 ฿, optional
+const feeOf=steps=>({j:S.guar?GUAR_FEE*steps:0,b:0});
+// <0 when a is cheaper, >0 when b is cheaper, null when they can't be compared (mixed currencies and no rate)
+function mcmp(a,b){if(!a.b&&!b.b)return a.j-b.j;if(!a.j&&!b.j)return a.b-b.b;const r=rate();return r?(a.j+a.b*r)-(b.j+b.b*r):null}
+function mgap(a,b){if(!a.b&&!b.b)return fmt(Math.abs(a.j-b.j))+" Jil";if(!a.j&&!b.j)return fmt(Math.abs(a.b-b.b))+" ฿";const r=rate();return r?"≈ "+fmt(Math.abs((a.j+a.b*r)-(b.j+b.b*r)))+" Jil":""}
+const mval=m=>{const r=rate();return r?m.j+m.b*r:m.j+m.b*1e9};
+function fmtM(m){if(!m||!mnz(m))return "0 Jil";const p=[];if(m.j)p.push(fmt(m.j)+" Jil");if(m.b)p.push(fmt(m.b)+" ฿");return p.join(" + ")}
+function bigM(m){const p=[];if(m.j||!m.b)p.push(`<span>${fmt(m.j)} <span class="unit">Jil</span></span>`);if(m.b)p.push(`<span>${fmt(m.b)} <span class="unit">฿</span></span>`);return p.join('<span class="plus">+</span>')}
+function shareOf(sub,total){const r=rate();if(r){const t=total.j+total.b*r;return t?(sub.j+sub.b*r)/t:0}if(sub.b)return total.b?sub.b/total.b:0;return total.j?sub.j/total.j:0}
+function rawList(acc){return Object.entries(acc).map(([k,q])=>{const pm=pmoney(k);return{k,q,has:!!pm,sub:pm?mul(pm,q):M0()}}).sort((a,b)=>mval(b.sub)-mval(a.sub)||a.k.localeCompare(b.k))}
+const sumM=list=>list.reduce((s,x)=>madd(s,x.sub),M0());
+const stepsOf=crafts=>Object.values(crafts).reduce((s,x)=>s+x,0);
+// price input with a Jil / ฿ switch beside it
+function pbox(k,f,ph,extra=""){const p=priceOf(k),c=curOf(k);return `<span class="pbox"><input class="pin ${extra}" data-price="${esc(k)}" data-f="${esc(f)}" inputmode="decimal" placeholder="${esc(ph)}" value="${p??""}" aria-label="ราคา ${esc(ITEMS.get(k)?.name||k)}"><button type="button" class="cur ${c}" data-act="cur" data-k="${esc(k)}" title="สลับสกุลเงิน Jil / บาท" aria-label="สกุลเงิน: ${c==="b"?"บาท":"Jil"} กดเพื่อสลับ">${c==="b"?"฿":"Jil"}</button></span>`}
+const guarBox=()=>`<label class="chk guar"><input type="checkbox" data-guar ${S.guar?"checked":""}> ใช้การันตี <span class="ghint">+${GUAR_FEE} Jil/ชิ้นที่คราฟ</span></label>`;
+const feeRow=(steps,fee)=>S.guar&&steps?`<div class="tr feerow"><span class="nmcell">ค่าการันตี <span class="ghint">${GUAR_FEE} Jil × ทุกชิ้นที่คราฟ</span></span><span class="r num">×${steps.toLocaleString()}</span><span class="r num">${GUAR_FEE} Jil</span><span class="sum">${fmt(fee.j)} Jil</span><span></span></div>`:"";
+
 /* ---------- cost engine ---------- */
 let memo=new Map();
 function evalItem(k,stack=[]){
   const self=stack.includes(k);if(!self&&memo.has(k))return memo.get(k);
-  const it=ITEMS.get(k),p=S.prices[k];const hasP=p!=null&&p!=="";const price=hasP?+p:null;
+  const it=ITEMS.get(k),price=pmoney(k),hasP=!!price;
   let craft=null;
-  if(it.recipe&&!self){let c=0,miss=0;for(const g of it.recipe.ing){const e=evalItem(g.k,[...stack,k]);c+=e.cost*g.q;miss+=e.miss}craft={cost:c,miss}}
+  if(it.recipe&&!self){let c=feeOf(1),miss=0;for(const g of it.recipe.ing){const e=evalItem(g.k,[...stack,k]);c=madd(c,e.cost,g.q);miss+=e.miss}craft={cost:c,miss}}
   let use="buy";
-  if(craft){const m=S.mode[k]||"auto";if(m==="buy")use="buy";else if(m==="craft")use="craft";else use=(hasP&&(craft.miss>0||price<=craft.cost))?"buy":"craft"}
-  const r=use==="craft"?{cost:craft.cost,miss:craft.miss,use,craft,price}:{cost:hasP?price:0,miss:hasP?0:1,use,craft,price};
+  // Auto: buy when a price is set and crafting is unpriced, dearer, or in another currency we can't compare
+  if(craft){const m=S.mode[k]||"auto";if(m==="buy")use="buy";else if(m==="craft")use="craft";else{const d=hasP&&!craft.miss?mcmp(price,craft.cost):null;use=hasP&&(craft.miss>0||d===null||d<=0)?"buy":"craft"}}
+  const r=use==="craft"?{cost:craft.cost,miss:craft.miss,use,craft,price}:{cost:price||M0(),miss:hasP?0:1,use,craft,price};
   if(!self&&!stack.length)memo.set(k,r);else if(!self&&!it.recipe?.ing.some(g=>g.k===k))memo.set(k,r);
   return r}
-function recipeCost(rec){let c=0,miss=0;for(const g of rec.ing){const e=evalItem(g.k,[rec.k]);c+=e.cost*g.q;miss+=e.miss}return{cost:c,miss}}
+function recipeCost(rec){let c=feeOf(1),miss=0;for(const g of rec.ing){const e=evalItem(g.k,[rec.k]);c=madd(c,e.cost,g.q);miss+=e.miss}return{cost:c,miss}}
 function expand(rec,n,acc,crafts){crafts[rec.k]=(crafts[rec.k]||0)+n;
   (function walk(ings,mult,stack){for(const g of ings){const q=g.q*mult;const e=evalItem(g.k,stack);const it=ITEMS.get(g.k);
     if(e.use==="craft"&&it.recipe){crafts[g.k]=(crafts[g.k]||0)+q;walk(it.recipe.ing,q,[...stack,g.k])}else acc[g.k]=(acc[g.k]||0)+q}})(rec.ing,n,[rec.k])}
@@ -96,7 +123,7 @@ function viewRecipes(){
   const elsewhere=q&&U.tab!=="*"?RECIPES.filter(r=>r.tab!==U.tab&&(!U.type||r.type===U.type)&&hit(r)).length:0;
   let html="",grp=null;
   for(const r of list){const g=U.tab==="*"?r.tab:(r.group||"เริ่มต้น");if(g!==grp){html+=`<div class="grp">${esc(U.tab==="*"?TAB_TH[r.tab]:g)}</div>`;grp=g}
-    const c=recipeCost(r);html+=`<button class="row" data-act="sel" data-id="${r.id}" aria-current="${r.id===U.sel}">${badge(ITEMS.get(r.k))}<span class="nm">${esc(r.name)}</span>${r.src==="w"?'<span class="tag wiki">wiki</span>':""}<span class="cost${c.miss?" miss":""}">${c.miss?(c.cost?"≥"+fmt(c.cost):"—"):fmt(c.cost)}</span></button>`}
+    const c=recipeCost(r);html+=`<button class="row" data-act="sel" data-id="${r.id}" aria-current="${r.id===U.sel}">${badge(ITEMS.get(r.k))}<span class="nm">${esc(r.name)}</span>${r.src==="w"?'<span class="tag wiki">wiki</span>':""}<span class="cost${c.miss?" miss":""}">${c.miss?(mnz(c.cost)?"≥"+fmtM(c.cost):"—"):fmtM(c.cost)}</span></button>`}
   if(!list.length)html=`<div class="empty-note">ไม่พบสูตรที่ตรงกับ “${esc(U.q)}” ใน${U.tab==="*"?"ทุกหมวด":esc(TAB_TH[U.tab])}${U.type?" ("+TYPE_TH[U.type]+")":""}</div>`;
   if(elsewhere)html+=`<div style="padding:10px 14px"><button class="chip" data-act="tab" data-t="*" data-keepq="1">พบอีก ${elsewhere} สูตรในหมวดอื่น · ค้นหาทุกหมวด</button></div>`;
   const types=[["","ทั้งหมด"],["W","อาวุธ"],["A","ชุด"],["C","หมวก"]];
@@ -108,11 +135,10 @@ function viewDetail(){
   const r=RECIPES[U.sel];if(!r)return `<div class="empty-note">เลือกสูตรทางซ้ายเพื่อดูรายละเอียด</div>`;
   const out=ITEMS.get(r.k),n=Math.max(1,U.qty|0);
   const rc=recipeCost(r);const acc={},crafts={};expand(r,n,acc,crafts);
-  const raws=Object.entries(acc).map(([k,q])=>{const p=S.prices[k];const has=p!=null&&p!=="";return{k,q,has,sub:has?+p*q:0}}).sort((a,b)=>b.sub-a.sub||a.k.localeCompare(b.k));
-  const total=raws.reduce((s,x)=>s+x.sub,0),missing=raws.filter(x=>!x.has);
-  const steps=Object.values(crafts).reduce((s,x)=>s+x,0);
-  const op=evalItem(r.k);const sell=op.price;
-  let margin="";if(sell!=null&&!missing.length){const d=sell*n-total;margin=`<div class="sub ${d>=0?"":"warn"}">ราคาขาย ${fmt(sell*n)} · ${d>=0?"กำไร":"ขาดทุน"} ${fmt(Math.abs(d))}</div>`}
+  const raws=rawList(acc),rawT=sumM(raws),missing=raws.filter(x=>!x.has);
+  const steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee);
+  const sell=pmoney(r.k);
+  let margin="";if(sell&&!missing.length){const sv=mul(sell,n),d=mcmp(sv,total);margin=d===null?`<div class="sub">ราคาขาย ${fmtM(sv)} · คนละสกุลเงิน ตั้งอัตราแลกเปลี่ยนในสมุดราคาเพื่อคิดกำไร</div>`:`<div class="sub ${d>=0?"":"warn"}">ราคาขาย ${fmtM(sv)} · ${d>=0?"กำไร":"ขาดทุน"} ${mgap(sv,total)}</div>`}
   const inQ=S.queue.find(x=>x.id===r.id);
   return `<div class="dwrap">
   <button class="btn ghost back" data-act="close">← กลับไปที่รายการ</button>
@@ -120,29 +146,29 @@ function viewDetail(){
    <div class="qty" title="จำนวนที่จะคราฟ"><button data-act="qty" data-d="-1" aria-label="ลด">−</button><input id="qty" data-f="qty" class="num" inputmode="numeric" value="${n}" aria-label="จำนวน"><button data-act="qty" data-d="1" aria-label="เพิ่ม">+</button></div>
    ${out.usedIn.size?`<button class="btn" data-act="uses" data-k="${esc(r.k)}">ใช้ทำอะไรต่อได้</button>`:""}${uplBtn(r.k,imgSrc(r.k)?"เปลี่ยนรูป":"เพิ่มรูป")}<button class="btn pri" data-act="addq">${inQ?"เพิ่มอีก "+n+" ในรายการ":"เพิ่มในรายการคราฟ"}</button></div>
   <div class="totals">
-    <div><label>ต้นทุนรวม ${n>1?"("+n+" ชิ้น)":""}</label><div class="big">${fmt(total)} <span style="font-size:14px">Jil</span></div><div class="sub">${n>1?"ชิ้นละ "+fmt(total/n)+" Jil":"ต่อ 1 ชิ้น"}${missing.length?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${margin}</div>
+    <div><label>ต้นทุนรวม ${n>1?"("+n+" ชิ้น)":""}</label><div class="big">${bigM(total)}</div><div class="sub">${n>1?"ชิ้นละ "+fmtM(mul(total,1/n)):"ต่อ 1 ชิ้น"}${missing.length?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}${margin}</div>
     <div><label>วัตถุดิบที่ต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้นรวม</div></div>
-    <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${steps}</div><div class="sub">${Object.keys(crafts).length} สูตร</div></div>
+    <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${steps}</div><div class="sub">${Object.keys(crafts).length} สูตร</div>${guarBox()}</div>
     <div><label>ยังไม่มีราคา</label><div class="mid ${missing.length?"warn":""}">${missing.length}</div><div class="sub">${missing.length?"กรอกในช่องประ":"ครบทุกรายการ"}</div></div>
   </div>
   <div class="sec"><h3>โครงสูตร <span class="hint">กดลูกศรเพื่อดูสูตรย่อย · ช่อง “ทำ” เลือกว่าจะคราฟเองหรือซื้อ</span></h3>
    <div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span>ทำ</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span></div>${tree(r.ing,n,[r.k],1,String(r.id))}
-   <div class="tr" style="font-weight:600"><span>ผลรวมต้นทุน</span><span></span><span></span><span></span><span class="sum">${fmt(rc.cost*n)}</span></div>
-   <div class="tr"><span class="nmcell">${badge(out,1)} ราคาขาย/ซื้อ ${esc(r.name)}</span><span></span><span></span><span><input class="pin num ${sell==null?"":""}" data-price="${esc(r.k)}" data-f="sell-${esc(r.k)}" inputmode="decimal" placeholder="ไม่ระบุ" value="${sell??""}"></span><span class="sum">${sell!=null?fmt(sell*n):"—"}</span></div></div></div>
+   <div class="tr" style="font-weight:600"><span>ผลรวมต้นทุน</span><span></span><span></span><span></span><span class="sum">${fmtM(mul(rc.cost,n))}</span></div>
+   <div class="tr"><span class="nmcell">${badge(out,1)} ราคาขาย/ซื้อ ${esc(r.name)}</span><span></span><span></span><span>${pbox(r.k,"sell-"+r.k,"ไม่ระบุ")}</span><span class="sum">${sell?fmtM(mul(sell,n)):"—"}</span></div></div></div>
   <div class="sec shop"><h3>รายการต้องซื้อ/ฟาร์ม <span class="hint">รวมวัตถุดิบพื้นฐานทั้งหมดตามโหมดที่เลือก เรียงตามสัดส่วนต้นทุน</span><span class="legend"><button class="chip" data-act="copyshop">คัดลอกรายการ</button></span></h3>
    <div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
-   ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}<a data-act="item" data-k="${esc(x.k)}">${esc(it.name)}</a></span><span class="r num">×${x.q.toLocaleString()}</span><span><input class="pin ${x.has?"":"empty"}" data-price="${esc(x.k)}" data-f="s-${esc(x.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${x.has?S.prices[x.k]:""}"></span><span class="sum ${x.has?"":"miss"}">${x.has?fmt(x.sub):"—"}</span><span class="share"><i style="width:${total?x.sub/total*100:0}%"></i></span></div>`}).join("")}</div></div>
+   ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}<a data-act="item" data-k="${esc(x.k)}">${esc(it.name)}</a></span><span class="r num">×${x.q.toLocaleString()}</span><span>${pbox(x.k,"s-"+x.k,"ใส่ราคา",x.has?"":"empty")}</span><span class="sum ${x.has?"":"miss"}">${x.has?fmtM(x.sub):"—"}</span><span class="share"><i style="width:${shareOf(x.sub,rawT)*100}%"></i></span></div>`}).join("")}${feeRow(steps,fee)}</div></div>
   ${usedInBlock(out)}
   </div>`}
 function tree(ings,mult,stack,lvl,path){let h="";
   for(const g of ings){const it=ITEMS.get(g.k),q=g.q*mult,e=evalItem(g.k,stack),p=path+"/"+g.k;const can=!!it.recipe&&!stack.includes(g.k);
     const opened=U.open.has(p);const m=S.mode[g.k]||"auto";
     const modeHtml=can?`<span class="mode" role="group" aria-label="วิธีได้มา">${[["auto","อัตโนมัติ"],["craft","คราฟ"],["buy","ซื้อ"]].map(([v,l])=>`<button data-act="mode" data-k="${esc(g.k)}" data-m="${v}" aria-pressed="${m===v}" title="${l}">${l==="อัตโนมัติ"?"Auto":l}</button>`).join("")}</span>`:`<span class="mode na">ซื้อ/ฟาร์ม</span>`;
-    let cmp="";if(can&&e.craft&&e.price!=null&&!e.craft.miss){const d=e.craft.cost-e.price;cmp=d<0?`<span class="cheaper ok">คราฟถูกกว่า ${fmt(-d)}</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า ${fmt(d)}</span>`:""}
+    let cmp="";if(can&&e.craft&&e.price&&!e.craft.miss){const d=mcmp(e.craft.cost,e.price),gap=mgap(e.craft.cost,e.price);cmp=d===null?`<span class="cheaper">คนละสกุลเงิน</span>`:d<0?`<span class="cheaper ok">คราฟถูกกว่า ${gap}</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า ${gap}</span>`:""}
     h+=`<div class="tr lvl${Math.min(lvl,5)}"><span class="nmcell" style="padding-left:${(lvl-1)*18}px"><button class="tw" data-act="tw" data-p="${esc(p)}" ${can?"":"disabled"} aria-label="${opened?"ซ่อน":"แสดง"}สูตรย่อย" aria-expanded="${opened}">${can?(opened?"▾":"▸"):""}</button>${badge(it,1)}<a data-act="item" data-k="${esc(g.k)}">${esc(it.name)}</a></span>
      <span class="r num">×${q.toLocaleString()}</span><span>${modeHtml}</span>
-     <span><input class="pin ${e.price==null&&e.use==="buy"?"empty":""}" data-price="${esc(g.k)}" data-f="t-${esc(p)}" inputmode="decimal" placeholder="${e.use==="craft"?fmt(e.cost):"ใส่ราคา"}" value="${e.price??""}" aria-label="ราคา ${esc(it.name)}"></span>
-     <span><span class="sum ${e.miss?"miss":""}" style="display:block">${e.cost||!e.miss?fmt(e.cost*q):"—"}</span>${e.use==="craft"?`<span class="via">คราฟเอง${e.miss?" · ขาดราคา":""}</span>`:cmp?`<span class="via">${cmp}</span>`:""}</span></div>`;
+     <span>${pbox(g.k,"t-"+p,e.use==="craft"?fmtM(e.cost):"ใส่ราคา",!e.price&&e.use==="buy"?"empty":"")}</span>
+     <span><span class="sum ${e.miss?"miss":""}" style="display:block">${mnz(e.cost)||!e.miss?fmtM(mul(e.cost,q)):"—"}</span>${e.use==="craft"?`<span class="via">คราฟเอง${e.miss?" · ขาดราคา":""}</span>`:cmp?`<span class="via">${cmp}</span>`:""}</span></div>`;
     if(can&&opened)h+=tree(it.recipe.ing,q,[...stack,g.k],lvl+1,p)}
   return h}
 function usedInBlock(it){const ids=[...it.usedIn];if(!ids.length)return "";
@@ -185,7 +211,7 @@ function viewUseDetail(){
   const shown=all.filter(x=>(!U.useTab||x.r.tab===U.useTab)&&(!U.useDirect||x.depth===1))
     .sort((a,b)=>ti(a.r.tab)-ti(b.r.tab)||a.depth-b.depth||a.r.id-b.r.id);
   const direct=all.filter(x=>x.depth===1).length,maxDepth=all.reduce((m,x)=>Math.max(m,x.depth),0);
-  const p=S.prices[it.k],has=p!=null&&p!=="";
+  const pm=pmoney(it.k),has=!!pm;
   const src=it.recipe?`<div class="crumbs" style="margin-top:6px">คราฟได้จาก: ${it.recipe.ing.map(g=>`<a class="ulink" data-act="usel" data-k="${esc(g.k)}">${esc(ITEMS.get(g.k).name)}</a> ×${g.q}`).join(" · ")}</div>`:"";
   let body="",grp=null;
   for(const x of shown){
@@ -194,7 +220,7 @@ function viewUseDetail(){
     body+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(x.r.k),1)}<a data-act="openrec" data-id="${x.r.id}">${esc(x.r.name)}</a></span>
       <span style="font-size:12px;color:var(--ink2)">${x.r.type?TYPE_TH[x.r.type]:esc(x.r.group||"")}</span>
       <span class="r num" title="ขั้นที่">${x.depth}</span><span class="r num">×${x.need.toLocaleString()}</span>
-      <span class="sum ${has?"":"miss"}">${has?fmt(+p*x.need):"—"}</span><span class="path">${via}</span></div>`}
+      <span class="sum ${has?"":"miss"}">${has?fmtM(mul(pm,x.need)):"—"}</span><span class="path">${via}</span></div>`}
   return `<div class="dwrap">
   <button class="btn ghost back" data-act="uclose">← กลับไปที่รายการ</button>
   <div class="dhead">${badge(it)}<div class="dtitle"><h2>${esc(it.name)}</h2><div class="crumbs"><span class="tag">${CAT_TH[it.cat]||"วัตถุดิบ"}</span>${it.recipe?"<span>คราฟได้</span>":"<span>ซื้อ/ฟาร์ม</span>"}</div>${src}</div>
@@ -203,7 +229,7 @@ function viewUseDetail(){
     <div><label>ใช้คราฟต่อได้ทั้งหมด</label><div class="big">${all.length} <span style="font-size:14px">สูตร</span></div><div class="sub">ใช้ตรง ${direct} · ทางอ้อม ${all.length-direct}</div></div>
     <div><label>อาชีพ/หมวดที่ใช้</label><div class="mid">${Object.keys(tabCount).length}</div><div class="sub">${Object.keys(tabCount).sort((a,b)=>ti(a)-ti(b)).slice(0,4).map(t=>TAB_TH[t].split(" ·")[0]).join(", ")}${Object.keys(tabCount).length>4?"…":""}</div></div>
     <div><label>ไกลสุด</label><div class="mid">${maxDepth} ขั้น</div><div class="sub">นับจากชิ้นนี้ถึงสูตรปลายทาง</div></div>
-    <div><label>ราคา/ชิ้น (Jil)</label><input class="pin num ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="up-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?p:""}" style="margin-top:4px"><div class="sub">ใช้คำนวณคอลัมน์มูลค่า</div></div>
+    <div><label>ราคา/ชิ้น</label><div style="margin-top:4px">${pbox(it.k,"up-"+it.k,"ใส่ราคา",has?"":"empty")}</div><div class="sub">ใช้คำนวณคอลัมน์มูลค่า</div></div>
   </div>
   <div class="sec uses"><h3>${esc(it.name)} ใช้คราฟอะไรได้บ้าง <span class="hint">“ใช้ต่อ 1 ชิ้น” นับรวมทุกขั้น ถ้าคราฟของกลางทางเอง · กดชื่อของกลางทางเพื่อไล่ต่อ</span></h3>
    <div class="chips"><button class="chip" data-act="utab" data-t="" aria-pressed="${!U.useTab}">ทุกหมวด ${all.length}</button>${Object.keys(tabCount).sort((a,b)=>ti(a)-ti(b)).map(t=>`<button class="chip" data-act="utab" data-t="${t}" aria-pressed="${U.useTab===t}">${esc(TAB_TH[t].split(" ·")[0])} ${tabCount[t]}</button>`).join("")}
@@ -219,13 +245,14 @@ function viewPrices(){
     return !q||it.k.includes(q)});
   const f=[["all","ทั้งหมด"],["missing","ยังไม่มีราคา"],["priced","มีราคาแล้ว"],["base","วัตถุดิบพื้นฐาน"],["craft","คราฟได้"],["noimg","ยังไม่มีรูป"]];
   return `<section class="page"><div class="pwrap pb">
-   <div class="intro"><div><h2>สมุดราคา</h2><p>ใส่ราคาต่อชิ้นเป็น Jil ครั้งเดียว ทุกสูตรจะคำนวณตามทันที ไอเทมที่คราฟได้จะแสดงต้นทุนคราฟเทียบกับราคาที่ใส่ เรียงตามจำนวนสูตรที่ใช้ของชิ้นนั้น</p><p>${ASSETS?"รูปไอเทม: อัปโหลดทีละแถว หรือเลือกหลายไฟล์พร้อมกันโดยตั้งชื่อไฟล์ตามชื่อไอเทม เช่น Zinc Ore.png ระบบจะจับคู่ให้เอง กด “ส่งออกแพ็ก .zip” เพื่อเก็บราคาและรูปทั้งหมดไว้ในเครื่อง (โฟลเดอร์ images/ แยกไว้) แล้วนำเข้ากลับได้ทุกเมื่อ ("+[...ITEMS.keys()].filter(imgSrc).length+"/"+ITEMS.size+" มีรูป) รูปในโฟลเดอร์ images/ ของ repo จะโหลดให้อัตโนมัติ":"รูปไอเทมที่เจ้าของหน้าใส่ไว้จะแสดงที่นี่"}</p></div>
+   <div class="intro"><div><h2>สมุดราคา</h2><p>ใส่ราคาต่อชิ้นครั้งเดียว ทุกสูตรจะคำนวณตามทันที กดปุ่มข้างช่องราคาเพื่อสลับว่าเป็น <b>Jil</b> (เงินในเกม) หรือ <b>฿</b> (เงินจริง) ยอดรวมจะแยกสองสกุลเสมอ ไอเทมที่คราฟได้จะแสดงต้นทุนคราฟเทียบกับราคาที่ใส่</p><p>${ASSETS?"รูปไอเทม: อัปโหลดทีละแถว หรือเลือกหลายไฟล์พร้อมกันโดยตั้งชื่อไฟล์ตามชื่อไอเทม เช่น Zinc Ore.png ระบบจะจับคู่ให้เอง กด “ส่งออกแพ็ก .zip” เพื่อเก็บราคาและรูปทั้งหมดไว้ในเครื่อง (โฟลเดอร์ images/ แยกไว้) แล้วนำเข้ากลับได้ทุกเมื่อ ("+[...ITEMS.keys()].filter(imgSrc).length+"/"+ITEMS.size+" มีรูป) รูปในโฟลเดอร์ images/ ของ repo จะโหลดให้อัตโนมัติ":"รูปไอเทมที่เจ้าของหน้าใส่ไว้จะแสดงที่นี่"}</p></div>
     <div class="ptools">${ASSETS?`<label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">อัปโหลดรูปหลายไฟล์<input type="file" id="bulkimg" accept="image/*" multiple></label>`:""}<button class="btn" data-act="zipout">ส่งออกแพ็ก .zip</button><label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">นำเข้าแพ็ก .zip<input type="file" id="packin" accept=".zip,.json,application/zip,application/json"></label><label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">นำเข้าจากโฟลเดอร์<input type="file" id="dirin" webkitdirectory multiple></label><button class="btn ghost" data-act="export">คัดลอกราคา (ข้อความ)</button><button class="btn ghost" data-act="import">วางราคา</button></div></div>
+   <div class="settings"><label class="chk">อัตราแลกเปลี่ยน 1 ฿ = <input class="pin rate" id="rate" data-f="rate" inputmode="decimal" placeholder="ไม่ระบุ" value="${S.rate||""}"> Jil</label><span class="ghint">ไม่บังคับ ใช้เทียบราคาข้ามสกุลและคิดกำไรเท่านั้น ยอดรวมยังแยก Jil กับ ฿ เหมือนเดิม</span>${guarBox()}</div>
    <div class="ptools"><input class="inp" id="pbq" data-f="pbq" type="search" placeholder="ค้นหาไอเทม…" value="${esc(U.pbQ)}"><div class="chips">${f.map(([v,l])=>`<button class="chip" data-act="pbf" data-t="${v}" aria-pressed="${U.pbFilter===v}">${l}</button>`).join("")}</div><span class="hint" style="color:var(--ink3);font-size:12px">${rows.length} รายการ</span></div>
-   <div class="tbl"><div class="tr h"><span>ไอเทม</span><span>ประเภท</span><span class="r">ใช้ใน</span><span class="r">ต้นทุนคราฟ</span><span class="r">ราคา/ชิ้น (Jil)</span><span>เทียบ</span><span>รูป</span></div>
+   <div class="tbl"><div class="tr h"><span>ไอเทม</span><span>ประเภท</span><span class="r">ใช้ใน</span><span class="r">ต้นทุนคราฟ</span><span class="r">ราคา/ชิ้น</span><span>เทียบ</span><span>รูป</span></div>
    ${rows.slice(0,400).map(it=>{const has=S.prices[it.k]!=null&&S.prices[it.k]!=="";let cc="",cmp="";
-     if(it.recipe){const c=recipeCost(it.recipe);cc=c.miss?(c.cost?"≥"+fmt(c.cost):"—"):fmt(c.cost);if(has&&!c.miss){const d=c.cost-+S.prices[it.k];cmp=d<0?`<span class="cheaper ok">คราฟถูกกว่า</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า</span>`:""}}
-     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span><input class="pin ${has?"":"empty"}" data-price="${esc(it.k)}" data-f="pb-${esc(it.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${has?S.prices[it.k]:""}" aria-label="ราคา ${esc(it.name)}"></span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
+     if(it.recipe){const c=recipeCost(it.recipe);cc=c.miss?(mnz(c.cost)?"≥"+fmtM(c.cost):"—"):fmtM(c.cost);if(has&&!c.miss){const d=mcmp(c.cost,pmoney(it.k));cmp=d===null?`<span class="cheaper">คนละสกุลเงิน</span>`:d<0?`<span class="cheaper ok">คราฟถูกกว่า</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า</span>`:""}}
+     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span>${pbox(it.k,"pb-"+it.k,"ใส่ราคา",has?"":"empty")}</span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
    ${rows.length>400?`<div class="empty-note">แสดง 400 รายการแรก ใช้ช่องค้นหาเพื่อหาที่เหลือ</div>`:""}${!rows.length?`<div class="empty-note">ไม่มีไอเทมในตัวกรองนี้</div>`:""}</div></div></section>`}
 
 /* ---------- inventory-style preview of everything to gather ---------- */
@@ -295,20 +322,20 @@ function slotFail(el){BAD.add(el.getAttribute("src"));clearTimeout(slotFail.t);s
 function viewQueue(){
   if(!S.queue.length)return `<section class="page"><div class="pwrap"><div class="intro"><div><h2>รายการคราฟ</h2><p>ยังไม่มีอะไรในรายการ เปิดสูตรที่ต้องการแล้วกด “เพิ่มในรายการคราฟ” ระบบจะรวมวัตถุดิบทุกสูตรให้เป็นรายการเดียวพร้อมต้นทุนรวม</p></div></div><div><button class="btn pri" data-act="view" data-v="recipes">ไปที่สูตรคราฟ</button></div></div></section>`;
   const acc={},crafts={};let rows="";
-  for(const [i,e] of S.queue.entries()){const r=RECIPES[e.id];const a={};expand(r,e.n,a,crafts);let c=0,m=0;for(const [k,q] of Object.entries(a)){acc[k]=(acc[k]||0)+q;const p=S.prices[k];if(p!=null&&p!=="")c+=+p*q;else m++}
-    rows+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(r.k),1)}<a data-act="openrec" data-id="${r.id}">${esc(r.name)}</a></span><span><div class="qty" style="height:30px"><button data-act="qq" data-i="${i}" data-d="-1" style="height:30px">−</button><input class="num" data-qi="${i}" data-f="qq-${i}" value="${e.n}" style="height:30px;width:44px"><button data-act="qq" data-i="${i}" data-d="1" style="height:30px">+</button></div></span><span class="sum ${m?"miss":""}">${fmt(c)}${m?` <small>(ขาด ${m})</small>`:""}</span><button class="x" data-act="qdel" data-i="${i}" aria-label="ลบ">×</button></div>`}
-  const raws=Object.entries(acc).map(([k,q])=>{const p=S.prices[k];const has=p!=null&&p!=="";return{k,q,has,sub:has?+p*q:0}}).sort((a,b)=>b.sub-a.sub||a.k.localeCompare(b.k));
-  const total=raws.reduce((s,x)=>s+x.sub,0),miss=raws.filter(x=>!x.has).length;
+  for(const [i,e] of S.queue.entries()){const r=RECIPES[e.id];const a={},cr={};expand(r,e.n,a,cr);for(const [k,v] of Object.entries(cr))crafts[k]=(crafts[k]||0)+v;
+    let c=feeOf(stepsOf(cr)),m=0;for(const [k,q] of Object.entries(a)){acc[k]=(acc[k]||0)+q;const pm=pmoney(k);if(pm)c=madd(c,pm,q);else m++}
+    rows+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(r.k),1)}<a data-act="openrec" data-id="${r.id}">${esc(r.name)}</a></span><span><div class="qty" style="height:30px"><button data-act="qq" data-i="${i}" data-d="-1" style="height:30px">−</button><input class="num" data-qi="${i}" data-f="qq-${i}" value="${e.n}" style="height:30px;width:44px"><button data-act="qq" data-i="${i}" data-d="1" style="height:30px">+</button></div></span><span class="sum ${m?"miss":""}">${fmtM(c)}${m?` <small>(ขาด ${m})</small>`:""}</span><button class="x" data-act="qdel" data-i="${i}" aria-label="ลบ">×</button></div>`}
+  const raws=rawList(acc),rawT=sumM(raws),steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee),miss=raws.filter(x=>!x.has).length;
   return `<section class="page"><div class="pwrap">
   <div class="intro"><div><h2>รายการคราฟ</h2><p>รวมวัตถุดิบจากทุกสูตรในรายการ ใช้โหมดคราฟ/ซื้อเดียวกับหน้าสูตร</p></div><div class="ptools"><button class="btn" data-act="copyq">คัดลอกรายการวัตถุดิบ</button><button class="btn ghost" data-act="qclear">ล้างรายการ</button></div></div>
-  <div class="totals"><div><label>ต้นทุนรวมทั้งรายการ</label><div class="big">${fmt(total)} <span style="font-size:14px">Jil</span></div><div class="sub">${S.queue.length} สูตร${miss?' · <span class="warn">ยังไม่ครบ</span>':""}</div></div>
+  <div class="totals"><div><label>ต้นทุนรวมทั้งรายการ</label><div class="big">${bigM(total)}</div><div class="sub">${S.queue.length} สูตร${miss?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}</div>
    <div><label>วัตถุดิบที่ต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้น</div></div>
-   <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${Object.values(crafts).reduce((s,x)=>s+x,0)}</div><div class="sub">${Object.keys(crafts).length} สูตร</div></div>
+   <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${steps}</div><div class="sub">${Object.keys(crafts).length} สูตร</div>${guarBox()}</div>
    <div><label>ยังไม่มีราคา</label><div class="mid ${miss?"warn":""}">${miss}</div><div class="sub">${miss?"กรอกด้านล่าง":"ครบ"}</div></div></div>
   <div class="sec q"><h3>สูตรในรายการ</h3><div class="tbl"><div class="tr h"><span>ไอเทม</span><span>จำนวน</span><span class="r">ต้นทุน</span><span></span></div>${rows}</div></div>
   ${invPreview(raws)}
   <div class="sec shop"><h3>วัตถุดิบรวม <span class="hint">ตารางราคา</span></h3><div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
-  ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}${esc(it.name)}</span><span class="r num">×${x.q.toLocaleString()}</span><span><input class="pin ${x.has?"":"empty"}" data-price="${esc(x.k)}" data-f="q-${esc(x.k)}" inputmode="decimal" placeholder="ใส่ราคา" value="${x.has?S.prices[x.k]:""}"></span><span class="sum ${x.has?"":"miss"}">${x.has?fmt(x.sub):"—"}</span><span class="share"><i style="width:${total?x.sub/total*100:0}%"></i></span></div>`}).join("")}</div></div></div></section>`}
+  ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}${esc(it.name)}</span><span class="r num">×${x.q.toLocaleString()}</span><span>${pbox(x.k,"q-"+x.k,"ใส่ราคา",x.has?"":"empty")}</span><span class="sum ${x.has?"":"miss"}">${x.has?fmtM(x.sub):"—"}</span><span class="share"><i style="width:${shareOf(x.sub,rawT)*100}%"></i></span></div>`}).join("")}${feeRow(steps,fee)}</div></div></div></section>`}
 
 /* ---------- images ---------- */
 const fileKey=n=>norm(n.replace(/\.[a-z0-9]+$/i,"").replace(/[_\-]+/g," "));
@@ -334,6 +361,7 @@ async function exportPack(){
   const nm=k=>ITEMS.get(k)?.name||k;
   const ledger={app:"Razan Craft Ledger",version:1,exportedAt:new Date().toISOString(),
     prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[nm(k),v])),
+    cur:Object.fromEntries(Object.entries(S.cur).map(([k,v])=>[nm(k),v])),guarantee:S.guar,rate:S.rate,
     mode:Object.fromEntries(Object.entries(S.mode).map(([k,v])=>[nm(k),v])),
     queue:S.queue.map(q=>({recipe:RECIPES[q.id].name,qty:q.n})),images:imgs};
   zip.file("ledger.json",JSON.stringify(ledger,null,1));
@@ -345,6 +373,8 @@ async function exportPack(){
 function applyLedger(L){let n=0;const key=x=>{const k=norm(x);return ITEMS.has(k)?k:null};
   for(const [x,v] of Object.entries(L.prices||{})){const k=key(x);if(k&&v!==""&&!isNaN(+v)){S.prices[k]=+v;n++}}
   for(const [x,v] of Object.entries(L.mode||{})){const k=key(x);if(k&&(v==="buy"||v==="craft"))S.mode[k]=v}
+  for(const [x,v] of Object.entries(L.cur||{})){const k=key(x);if(k){if(v==="b")S.cur[k]="b";else delete S.cur[k]}}
+  if(typeof L.guarantee==="boolean")S.guar=L.guarantee;if(+L.rate>0)S.rate=+L.rate;
   if(Array.isArray(L.queue))for(const q of L.queue){const r=RECIPES.find(r=>norm(r.name)===norm(q.recipe||""));if(r&&q.qty>0){const ex=S.queue.find(e=>e.id===r.id);ex?ex.n=Math.max(ex.n,q.qty):S.queue.push({id:r.id,n:q.qty})}}
   return n}
 async function importFiles(entries){ // entries: [{path, blob}]
@@ -382,6 +412,7 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="close"){U.showDetail=false;render()}
   else if(a==="item"){const it=ITEMS.get(b.dataset.k);if(it.recipe){U.sel=it.recipe.id;U.tab=it.recipe.tab;U.qty=1;U.open=new Set();render._scrolled=false;render();document.getElementById("detail")?.scrollTo(0,0)}else openUses(it.k)}
   else if(a==="uses")openUses(b.dataset.k);
+  else if(a==="cur"){const k=b.dataset.k;if(S.cur[k]==="b")delete S.cur[k];else S.cur[k]="b";save();render()}
   else if(a==="invmode"){U.invMode=b.dataset.m;render()}
   else if(a==="slot"){const k=b.dataset.k;if(U.invMode==="check"){S.have.has(k)?S.have.delete(k):S.have.add(k);save();render()}else if(U.invMode==="buy"){S.buy.has(k)?S.buy.delete(k):S.buy.add(k);save();render()}else openUses(k)}
   else if(a==="buymiss"){const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));let n=0;for(const k of Object.keys(acc))if(!S.have.has(k)&&!S.buy.has(k)){S.buy.add(k);n++}save();render();toast(n?"เพิ่ม "+n+" ชนิดในรับซื้อ":"ของที่ขาดอยู่ในรับซื้อครบแล้ว")}
@@ -409,12 +440,14 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="export")modal("export");else if(a==="import")modal("import");
   else if(a==="mclose")document.getElementById("modal-root").innerHTML="";
   else if(a==="mcopy")copy(document.getElementById("mta").value,document.getElementById("mta"));
-  else if(a==="mapply"){try{const d=JSON.parse(document.getElementById("mta").value);const pr=Array.isArray(d.prices)?Object.fromEntries(d.prices):d.prices||d;let n=0;for(const [k,v] of Object.entries(pr)){const kk=norm(k);if(ITEMS.has(kk)&&v!==""&&!isNaN(+v)){S.prices[kk]=+v;n++}}save();document.getElementById("modal-root").innerHTML="";render();toast("นำเข้า "+n+" ราคา")}catch(err){document.getElementById("merr").textContent="อ่านข้อมูลไม่ได้ ตรวจว่าเป็น JSON ที่ได้จากปุ่มส่งออก"}}
+  else if(a==="mapply"){try{const d=JSON.parse(document.getElementById("mta").value);const pr=Array.isArray(d.prices)?Object.fromEntries(d.prices):d.prices||d;let n=0;for(const [k,v] of Object.entries(pr)){const kk=norm(k);if(ITEMS.has(kk)&&v!==""&&!isNaN(+v)){S.prices[kk]=+v;n++}}for(const [k,v] of Object.entries(d.cur||{})){const kk=norm(k);if(ITEMS.has(kk)){if(v==="b")S.cur[kk]="b";else delete S.cur[kk]}}save();document.getElementById("modal-root").innerHTML="";render();toast("นำเข้า "+n+" ราคา")}catch(err){document.getElementById("merr").textContent="อ่านข้อมูลไม่ได้ ตรวจว่าเป็น JSON ที่ได้จากปุ่มส่งออก"}}
 });
-function modal(kind){const exp=kind==="export";const txt=exp?JSON.stringify({prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[ITEMS.get(k)?.name||k,v]))},null,1):"";
+function modal(kind){const exp=kind==="export";const txt=exp?JSON.stringify({prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[ITEMS.get(k)?.name||k,v])),cur:Object.fromEntries(Object.entries(S.cur).map(([k,v])=>[ITEMS.get(k)?.name||k,v]))},null,1):"";
   document.getElementById("modal-root").innerHTML=`<div class="modal"><div class="box"><h3 style="margin:0;font-family:var(--f-disp)">${exp?"ส่งออกราคา":"นำเข้าราคา"}</h3><p style="margin:0;color:var(--ink2)">${exp?"คัดลอกข้อความนี้ไปเก็บไว้หรือส่งให้เพื่อนในกิลด์":"วางข้อความ JSON ที่ได้จากปุ่มส่งออก ราคาเดิมของไอเทมเดียวกันจะถูกแทนที่"}</p><textarea id="mta" ${exp?"readonly":""} placeholder='{"prices":{"Zinc Ore":120}}'>${esc(txt)}</textarea><div id="merr" style="color:var(--warn);font-size:12px"></div><div class="ptools" style="justify-content:flex-end"><button class="btn ghost" data-act="mclose">ปิด</button>${exp?'<button class="btn pri" data-act="mcopy">คัดลอก</button>':'<button class="btn pri" data-act="mapply">นำเข้า</button>'}</div></div></div>`}
 document.addEventListener("input",e=>{const t=e.target;
-  if(t.dataset.price!=null){const v=t.value.replace(/[, ]/g,"");if(v===""||isNaN(+v))delete S.prices[t.dataset.price];else S.prices[t.dataset.price]=+v;save();render()}
+  if(t.dataset.guar!=null){S.guar=t.checked;save();render()}
+  else if(t.id==="rate"){const v=+t.value.replace(/[, ]/g,"");S.rate=v>0?v:null;save();render()}
+  else if(t.dataset.price!=null){const v=t.value.replace(/[, ]/g,"");if(v===""||isNaN(+v))delete S.prices[t.dataset.price];else S.prices[t.dataset.price]=+v;save();render()}
   else if(t.id==="q"){U.q=t.value;render()}
   else if(t.id==="pbq"){U.pbQ=t.value;render()}
   else if(t.id==="uq"){U.useQ=t.value;render()}
