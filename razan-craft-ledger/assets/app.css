@@ -197,6 +197,21 @@ main{flex:1;min-height:0;display:grid}
 .used button.picked{border-color:var(--jil)}
 .used .ok{color:var(--ok);font-weight:700}
 .used .buytag{font-size:10px;font-weight:600;padding:0 5px;border-radius:4px;background:var(--jil);color:var(--panel)}
+.slot.part{border-color:var(--jil);background:var(--jil-soft)}
+.slot.part .slot-n{background:var(--jil)}
+.slot-have{position:absolute;top:-6px;right:-4px;padding:0 5px;border-radius:5px;background:var(--jil);color:var(--panel);font-size:10px;font-weight:600;line-height:16px}
+.used button.part{border-color:var(--jil);background:var(--jil-soft)}
+.stk .tr{grid-template-columns:minmax(160px,1fr) 70px 84px 70px 150px 130px minmax(70px,110px);min-width:840px}
+.mids .tr{grid-template-columns:minmax(180px,1fr) 80px 96px 110px;min-width:480px}
+.tr.done{background:color-mix(in srgb,var(--ok-soft) 55%,transparent)}
+.okt{color:var(--ok);font-weight:600;font-size:12px}
+.partt{color:var(--jil);font-weight:600}
+.pin.stkin{text-align:center}
+.totals .mid.ok{color:var(--ok)}
+.stocknote{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:12px;color:var(--ink2)}
+.stockbox{gap:14px}
+.stkqty{align-self:flex-start}
+.stkqty input{width:90px;font-size:18px}
 .inv-miss{display:flex;flex-direction:column;gap:6px;margin-top:4px}
 .inv-miss-h{font-size:12px;color:var(--ink3)}
 .inv-miss .used b{font-weight:600;color:var(--ink2)}
@@ -208,7 +223,7 @@ main{flex:1;min-height:0;display:grid}
 .pwrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:16px}
 .ptools{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
 .ptools .inp{max-width:300px}
-.pb .tr{grid-template-columns:minmax(180px,1fr) 90px 70px 140px 160px 110px 130px;min-width:930px}
+.pb .tr{grid-template-columns:minmax(180px,1fr) 90px 70px 140px 160px 110px 80px 130px;min-width:1020px}
 .intro{display:flex;gap:16px;flex-wrap:wrap;align-items:flex-end;justify-content:space-between}
 .intro h2{font:700 24px var(--f-disp);margin:0}
 .intro p{margin:4px 0 0;color:var(--ink2);max-width:62ch}

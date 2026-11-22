@@ -30,9 +30,9 @@ const uplBtn=(k,label)=>ASSETS?`<label class="upl">${label}<input type="file" ac
 
 /* ---------- state ---------- */
 const LS="razan-ledger-v1";
-let S={prices:{},cur:{},mode:{},queue:[],have:new Set(),buy:new Set(),guar:true,rate:null};
-function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[]);S.cur=Object.fromEntries(obj.cur||[]);S.guar=obj.guar===undefined?true:!!obj.guar;S.rate=+obj.rate>0?+obj.rate:null}
-const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],cur:Object.entries(S.cur),guar:S.guar,rate:S.rate,at:Date.now()});
+let S={prices:{},cur:{},mode:{},queue:[],have:new Set(),buy:new Set(),guar:true,rate:null,stock:{}};
+function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[]);S.cur=Object.fromEntries(obj.cur||[]);S.guar=obj.guar===undefined?true:!!obj.guar;S.rate=+obj.rate>0?+obj.rate:null;S.stock=Object.fromEntries((obj.stock||[]).filter(([k,v])=>v>0))}
+const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],cur:Object.entries(S.cur),guar:S.guar,rate:S.rate,stock:Object.entries(S.stock),at:Date.now()});
 try{const s=localStorage.getItem(LS);if(s)load(JSON.parse(s))}catch(e){}
 let dbDoc=null,saveT=null;
 function save(){try{localStorage.setItem(LS,JSON.stringify(dump()))}catch(e){}clearTimeout(saveT);saveT=setTimeout(async()=>{const d=dump();
@@ -89,6 +89,27 @@ function evalItem(k,stack=[]){
   if(!self&&!stack.length)memo.set(k,r);else if(!self&&!it.recipe?.ing.some(g=>g.k===k))memo.set(k,r);
   return r}
 function recipeCost(rec){let c=feeOf(1),miss=0;for(const g of rec.ing){const e=evalItem(g.k,[rec.k]);c=madd(c,e.cost,g.q);miss+=e.miss}return{cost:c,miss}}
+/* ---------- my stock: what you own is used first, intermediates included ---------- */
+const stockOf=k=>S.stock[k]||0;
+function setStock(k,v){v=Math.max(0,Math.floor(+v||0));if(v)S.stock[k]=v;else delete S.stock[k];save()}
+// entries: [[recipe, qty]]. need = total demand, used = taken from stock, gather = still to buy/farm,
+// crafts = pieces you still craft (top recipes included), kind = "mid" (crafted on the way) or "leaf" (bought/farmed)
+function plan(entries,useStock=true){
+  const pool=useStock?{...S.stock}:{},need={},used={},gather={},crafts={},kind={};
+  function want(k,q,stack){const it=ITEMS.get(k),e=evalItem(k,stack),mid=e.use==="craft"&&!!it.recipe&&!stack.includes(k);
+    kind[k]=kind[k]||(mid?"mid":"leaf");need[k]=(need[k]||0)+q;
+    const have=pool[k]||0,t=Math.min(have,q);if(t){pool[k]=have-t;used[k]=(used[k]||0)+t}
+    const rest=q-t;if(!rest)return;
+    if(mid){crafts[k]=(crafts[k]||0)+rest;for(const g of it.recipe.ing)want(g.k,g.q*rest,[...stack,k])}else gather[k]=(gather[k]||0)+rest}
+  for(const [rec,n] of entries){crafts[rec.k]=(crafts[rec.k]||0)+n;for(const g of rec.ing)want(g.k,g.q*n,[rec.k])}
+  return{need,used,gather,crafts,kind}}
+const queueEntries=()=>S.queue.map(e=>[RECIPES[e.id],e.n]);
+// rows of things to gather (leaf items): need / have (from stock) / rem (still missing) + price of what's missing
+function leafRows(P){return Object.keys(P.need).filter(k=>P.kind[k]==="leaf").map(k=>{const pm=pmoney(k),rem=P.gather[k]||0,have=P.used[k]||0,need=P.need[k];
+  return{k,q:need,need,have,rem,has:!!pm,sub:pm?mul(pm,rem):M0()}}).sort((a,b)=>(b.rem>0)-(a.rem>0)||mval(b.sub)-mval(a.sub)||a.k.localeCompare(b.k))}
+const midRows=P=>Object.keys(P.need).filter(k=>P.kind[k]==="mid").map(k=>({k,need:P.need[k],have:P.used[k]||0,craft:P.crafts[k]||0})).sort((a,b)=>a.k.localeCompare(b.k));
+const planCost=P=>{let c=feeOf(stepsOf(P.crafts));for(const [k,q] of Object.entries(P.gather)){const pm=pmoney(k);if(pm)c=madd(c,pm,q)}return c};
+const usedAny=P=>Object.keys(P.used).length>0;
 function expand(rec,n,acc,crafts){crafts[rec.k]=(crafts[rec.k]||0)+n;
   (function walk(ings,mult,stack){for(const g of ings){const q=g.q*mult;const e=evalItem(g.k,stack);const it=ITEMS.get(g.k);
     if(e.use==="craft"&&it.recipe){crafts[g.k]=(crafts[g.k]||0)+q;walk(it.recipe.ing,q,[...stack,g.k])}else acc[g.k]=(acc[g.k]||0)+q}})(rec.ing,n,[rec.k])}
@@ -134,11 +155,12 @@ const railBtn=(t,n)=>`<button data-act="tab" data-t="${t}" aria-current="${U.tab
 function viewDetail(){
   const r=RECIPES[U.sel];if(!r)return `<div class="empty-note">เลือกสูตรทางซ้ายเพื่อดูรายละเอียด</div>`;
   const out=ITEMS.get(r.k),n=Math.max(1,U.qty|0);
-  const rc=recipeCost(r);const acc={},crafts={};expand(r,n,acc,crafts);
-  const raws=rawList(acc),rawT=sumM(raws),missing=raws.filter(x=>!x.has);
-  const steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee);
+  const rc=recipeCost(r);const P=plan([[r,n]]),crafts=P.crafts;
+  const raws=leafRows(P).filter(x=>x.rem>0).map(x=>({...x,q:x.rem})),rawT=sumM(raws),missing=raws.filter(x=>!x.has);
+  const steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee),full=planCost(plan([[r,n]],false)),hasStock=usedAny(P);
   const sell=pmoney(r.k);
-  let margin="";if(sell&&!missing.length){const sv=mul(sell,n),d=mcmp(sv,total);margin=d===null?`<div class="sub">ราคาขาย ${fmtM(sv)} · คนละสกุลเงิน ตั้งอัตราแลกเปลี่ยนในสมุดราคาเพื่อคิดกำไร</div>`:`<div class="sub ${d>=0?"":"warn"}">ราคาขาย ${fmtM(sv)} · ${d>=0?"กำไร":"ขาดทุน"} ${mgap(sv,total)}</div>`}
+  let margin="";if(sell&&!missing.length){const sv=mul(sell,n),d=mcmp(sv,full);margin=d===null?`<div class="sub">ราคาขาย ${fmtM(sv)} · คนละสกุลเงิน ตั้งอัตราแลกเปลี่ยนในสมุดราคาเพื่อคิดกำไร</div>`:`<div class="sub ${d>=0?"":"warn"}">ราคาขาย ${fmtM(sv)} · ${d>=0?"กำไร":"ขาดทุน"} ${mgap(sv,full)}</div>`}
+  const usedChips=hasStock?`<div class="stocknote"><span>หักจากของที่มีแล้ว:</span>${Object.entries(P.used).map(([k,q])=>`<button class="chip" data-act="stockedit" data-k="${esc(k)}">${esc(ITEMS.get(k).name)} ×${q.toLocaleString()}</button>`).join("")}</div>`:"";
   const inQ=S.queue.find(x=>x.id===r.id);
   return `<div class="dwrap">
   <button class="btn ghost back" data-act="close">← กลับไปที่รายการ</button>
@@ -146,16 +168,16 @@ function viewDetail(){
    <div class="qty" title="จำนวนที่จะคราฟ"><button data-act="qty" data-d="-1" aria-label="ลด">−</button><input id="qty" data-f="qty" class="num" inputmode="numeric" value="${n}" aria-label="จำนวน"><button data-act="qty" data-d="1" aria-label="เพิ่ม">+</button></div>
    ${out.usedIn.size?`<button class="btn" data-act="uses" data-k="${esc(r.k)}">ใช้ทำอะไรต่อได้</button>`:""}${uplBtn(r.k,imgSrc(r.k)?"เปลี่ยนรูป":"เพิ่มรูป")}<button class="btn pri" data-act="addq">${inQ?"เพิ่มอีก "+n+" ในรายการ":"เพิ่มในรายการคราฟ"}</button></div>
   <div class="totals">
-    <div><label>ต้นทุนรวม ${n>1?"("+n+" ชิ้น)":""}</label><div class="big">${bigM(total)}</div><div class="sub">${n>1?"ชิ้นละ "+fmtM(mul(total,1/n)):"ต่อ 1 ชิ้น"}${missing.length?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}${margin}</div>
-    <div><label>วัตถุดิบที่ต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้นรวม</div></div>
+    <div><label>${hasStock?"ยังต้องจ่าย":"ต้นทุนรวม"} ${n>1?"("+n+" ชิ้น)":""}</label><div class="big">${bigM(total)}</div>${hasStock?`<div class="sub">ต้นทุนเต็มถ้าไม่มีของเลย ${fmtM(full)}</div>`:""}<div class="sub">${n>1?"ชิ้นละ "+fmtM(mul(full,1/n))+(hasStock?" (เต็ม)":""):"ต่อ 1 ชิ้น"}${missing.length?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}${margin}</div>
+    <div><label>วัตถุดิบที่ยังต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้นรวม</div></div>
     <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${steps}</div><div class="sub">${Object.keys(crafts).length} สูตร</div>${guarBox()}</div>
     <div><label>ยังไม่มีราคา</label><div class="mid ${missing.length?"warn":""}">${missing.length}</div><div class="sub">${missing.length?"กรอกในช่องประ":"ครบทุกรายการ"}</div></div>
   </div>
   <div class="sec"><h3>โครงสูตร <span class="hint">กดลูกศรเพื่อดูสูตรย่อย · ช่อง “ทำ” เลือกว่าจะคราฟเองหรือซื้อ</span></h3>
    <div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span>ทำ</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span></div>${tree(r.ing,n,[r.k],1,String(r.id))}
-   <div class="tr" style="font-weight:600"><span>ผลรวมต้นทุน</span><span></span><span></span><span></span><span class="sum">${fmtM(mul(rc.cost,n))}</span></div>
+   <div class="tr" style="font-weight:600"><span>ผลรวมต้นทุน${hasStock?' <span class="ghint">(ไม่หักของที่มี)</span>':""}</span><span></span><span></span><span></span><span class="sum">${fmtM(mul(rc.cost,n))}</span></div>
    <div class="tr"><span class="nmcell">${badge(out,1)} ราคาขาย/ซื้อ ${esc(r.name)}</span><span></span><span></span><span>${pbox(r.k,"sell-"+r.k,"ไม่ระบุ")}</span><span class="sum">${sell?fmtM(mul(sell,n)):"—"}</span></div></div></div>
-  <div class="sec shop"><h3>รายการต้องซื้อ/ฟาร์ม <span class="hint">รวมวัตถุดิบพื้นฐานทั้งหมดตามโหมดที่เลือก เรียงตามสัดส่วนต้นทุน</span><span class="legend"><button class="chip" data-act="copyshop">คัดลอกรายการ</button></span></h3>
+  <div class="sec shop"><h3>รายการต้องซื้อ/ฟาร์ม <span class="hint">วัตถุดิบพื้นฐานที่ยังขาด หักของที่มีแล้ว เรียงตามสัดส่วนต้นทุน</span><span class="legend"><button class="chip" data-act="copyshop">คัดลอกรายการ</button></span></h3>${usedChips}
    <div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
    ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}<a data-act="item" data-k="${esc(x.k)}">${esc(it.name)}</a></span><span class="r num">×${x.q.toLocaleString()}</span><span>${pbox(x.k,"s-"+x.k,"ใส่ราคา",x.has?"":"empty")}</span><span class="sum ${x.has?"":"miss"}">${x.has?fmtM(x.sub):"—"}</span><span class="share"><i style="width:${shareOf(x.sub,rawT)*100}%"></i></span></div>`}).join("")}${feeRow(steps,fee)}</div></div>
   ${usedInBlock(out)}
@@ -241,50 +263,60 @@ function viewUseDetail(){
 function viewPrices(){
   const q=norm(U.pbQ);const all=[...ITEMS.values()].sort((a,b)=>b.usedIn.size-a.usedIn.size||a.name.localeCompare(b.name));
   const rows=all.filter(it=>{const has=S.prices[it.k]!=null&&S.prices[it.k]!=="";
-    if(U.pbFilter==="missing"&&has)return false;if(U.pbFilter==="priced"&&!has)return false;if(U.pbFilter==="craft"&&!it.recipe)return false;if(U.pbFilter==="noimg"&&imgSrc(it.k))return false;if(U.pbFilter==="base"&&(it.recipe||it.cat!=="m"))return false;
+    if(U.pbFilter==="missing"&&has)return false;if(U.pbFilter==="priced"&&!has)return false;if(U.pbFilter==="craft"&&!it.recipe)return false;if(U.pbFilter==="noimg"&&imgSrc(it.k))return false;if(U.pbFilter==="base"&&(it.recipe||it.cat!=="m"))return false;if(U.pbFilter==="stock"&&!stockOf(it.k))return false;
     return !q||it.k.includes(q)});
-  const f=[["all","ทั้งหมด"],["missing","ยังไม่มีราคา"],["priced","มีราคาแล้ว"],["base","วัตถุดิบพื้นฐาน"],["craft","คราฟได้"],["noimg","ยังไม่มีรูป"]];
+  const f=[["all","ทั้งหมด"],["missing","ยังไม่มีราคา"],["priced","มีราคาแล้ว"],["base","วัตถุดิบพื้นฐาน"],["craft","คราฟได้"],["noimg","ยังไม่มีรูป"],["stock","มีในคลัง"]];
   return `<section class="page"><div class="pwrap pb">
    <div class="intro"><div><h2>สมุดราคา</h2><p>ใส่ราคาต่อชิ้นครั้งเดียว ทุกสูตรจะคำนวณตามทันที กดปุ่มข้างช่องราคาเพื่อสลับว่าเป็น <b>Jil</b> (เงินในเกม) หรือ <b>฿</b> (เงินจริง) ยอดรวมจะแยกสองสกุลเสมอ ไอเทมที่คราฟได้จะแสดงต้นทุนคราฟเทียบกับราคาที่ใส่</p><p>${ASSETS?"รูปไอเทม: อัปโหลดทีละแถว หรือเลือกหลายไฟล์พร้อมกันโดยตั้งชื่อไฟล์ตามชื่อไอเทม เช่น Zinc Ore.png ระบบจะจับคู่ให้เอง กด “ส่งออกแพ็ก .zip” เพื่อเก็บราคาและรูปทั้งหมดไว้ในเครื่อง (โฟลเดอร์ images/ แยกไว้) แล้วนำเข้ากลับได้ทุกเมื่อ ("+[...ITEMS.keys()].filter(imgSrc).length+"/"+ITEMS.size+" มีรูป) รูปในโฟลเดอร์ images/ ของ repo จะโหลดให้อัตโนมัติ":"รูปไอเทมที่เจ้าของหน้าใส่ไว้จะแสดงที่นี่"}</p></div>
     <div class="ptools">${ASSETS?`<label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">อัปโหลดรูปหลายไฟล์<input type="file" id="bulkimg" accept="image/*" multiple></label>`:""}<button class="btn" data-act="zipout">ส่งออกแพ็ก .zip</button><label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">นำเข้าแพ็ก .zip<input type="file" id="packin" accept=".zip,.json,application/zip,application/json"></label><label class="btn upl" style="border-style:solid;font-size:14px;padding:8px 14px">นำเข้าจากโฟลเดอร์<input type="file" id="dirin" webkitdirectory multiple></label><button class="btn ghost" data-act="export">คัดลอกราคา (ข้อความ)</button><button class="btn ghost" data-act="import">วางราคา</button></div></div>
    <div class="settings"><label class="chk">อัตราแลกเปลี่ยน 1 ฿ = <input class="pin rate" id="rate" data-f="rate" inputmode="decimal" placeholder="ไม่ระบุ" value="${S.rate||""}"> Jil</label><span class="ghint">ไม่บังคับ ใช้เทียบราคาข้ามสกุลและคิดกำไรเท่านั้น ยอดรวมยังแยก Jil กับ ฿ เหมือนเดิม</span>${guarBox()}</div>
    <div class="ptools"><input class="inp" id="pbq" data-f="pbq" type="search" placeholder="ค้นหาไอเทม…" value="${esc(U.pbQ)}"><div class="chips">${f.map(([v,l])=>`<button class="chip" data-act="pbf" data-t="${v}" aria-pressed="${U.pbFilter===v}">${l}</button>`).join("")}</div><span class="hint" style="color:var(--ink3);font-size:12px">${rows.length} รายการ</span></div>
-   <div class="tbl"><div class="tr h"><span>ไอเทม</span><span>ประเภท</span><span class="r">ใช้ใน</span><span class="r">ต้นทุนคราฟ</span><span class="r">ราคา/ชิ้น</span><span>เทียบ</span><span>รูป</span></div>
+   <div class="tbl"><div class="tr h"><span>ไอเทม</span><span>ประเภท</span><span class="r">ใช้ใน</span><span class="r">ต้นทุนคราฟ</span><span class="r">ราคา/ชิ้น</span><span>เทียบ</span><span class="r">มีแล้ว</span><span>รูป</span></div>
    ${rows.slice(0,400).map(it=>{const has=S.prices[it.k]!=null&&S.prices[it.k]!=="";let cc="",cmp="";
      if(it.recipe){const c=recipeCost(it.recipe);cc=c.miss?(mnz(c.cost)?"≥"+fmtM(c.cost):"—"):fmtM(c.cost);if(has&&!c.miss){const d=mcmp(c.cost,pmoney(it.k));cmp=d===null?`<span class="cheaper">คนละสกุลเงิน</span>`:d<0?`<span class="cheaper ok">คราฟถูกกว่า</span>`:d>0?`<span class="cheaper bad">ซื้อถูกกว่า</span>`:""}}
-     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span>${pbox(it.k,"pb-"+it.k,"ใส่ราคา",has?"":"empty")}</span><span>${cmp}</span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
+     return `<div class="tr"><span class="nmcell">${badge(it,1)}${it.recipe?`<a data-act="openrec" data-id="${it.recipe.id}">${esc(it.name)}</a>`:it.usedIn.size?`<a data-act="uses" data-k="${esc(it.k)}">${esc(it.name)}</a>`:esc(it.name)}</span><span style="font-size:12px;color:var(--ink2)">${CAT_TH[it.cat]||""}</span><span class="r num">${it.usedIn.size?`<a class="ulink" data-act="uses" data-k="${esc(it.k)}" title="ดูว่าใช้คราฟอะไรได้บ้าง">${it.usedIn.size}</a>`:""}</span><span class="r num" style="color:var(--ink2)">${cc}</span><span>${pbox(it.k,"pb-"+it.k,"ใส่ราคา",has?"":"empty")}</span><span>${cmp}</span><span><input class="pin stkin" data-stock="${esc(it.k)}" data-f="ps-${esc(it.k)}" inputmode="numeric" placeholder="0" value="${stockOf(it.k)||""}" aria-label="มี ${esc(it.name)} แล้วกี่ชิ้น"></span><span class="imgcell">${uplBtn(it.k,imgSrc(it.k)?"เปลี่ยน":"เพิ่มรูป")}${IMG[it.k]&&ASSETS?`<button class="x" data-act="imgdel" data-k="${esc(it.k)}" aria-label="ลบรูป ${esc(it.name)}">×</button>`:""}</span></div>`}).join("")}
    ${rows.length>400?`<div class="empty-note">แสดง 400 รายการแรก ใช้ช่องค้นหาเพื่อหาที่เหลือ</div>`:""}${!rows.length?`<div class="empty-note">ไม่มีไอเทมในตัวกรองนี้</div>`:""}</div></div></section>`}
 
 /* ---------- inventory-style preview of everything to gather ---------- */
 const qtyShort=n=>n>=10000?(Math.round(n/100)/10).toLocaleString("en-US")+"k":n.toLocaleString("en-US");
-const INV_MODES=[["view","ดูข้อมูล"],["check","เช็กครบ/ขาด"],["buy","เลือกไปรับซื้อ"]];
-const INV_HINT={view:"กดช่องเพื่อดูว่าของชิ้นนั้นใช้ทำอะไรได้",check:"กดช่องเพื่อสลับ ครบ ✓ / ขาด",buy:"กดช่องเพื่อเพิ่มหรือเอาออกจากคลังรับซื้อ"};
+const INV_MODES=[["view","ดูข้อมูล"],["count","นับของที่มี"],["buy","เลือกไปรับซื้อ"]];
+const INV_HINT={view:"กดช่องเพื่อดูว่าของชิ้นนั้นใช้ทำอะไรได้",count:"กดช่องเพื่อใส่จำนวนที่มีอยู่ หรือกรอกในคอลัมน์ “มีแล้ว” ของตารางด้านล่าง",buy:"กดช่องเพื่อเพิ่มหรือเอาออกจากคลังรับซื้อ (ใช้จำนวนที่ยังขาด)"};
 const hasImg=k=>{const s=imgSrc(k);return !!s&&!BAD.has(s)};
-function slotHtml(x,where){const it=ITEMS.get(x.k),got=S.have.has(x.k),inBuy=S.buy.has(x.k);
+const stOf=x=>x.rem<=0?"done":x.have>0?"part":"none";
+function slotHtml(x,where){const it=ITEMS.get(x.k),st=stOf(x),inBuy=S.buy.has(x.k)&&x.rem>0;
   const pic=hasImg(x.k)?`<img src="${esc(imgSrc(x.k))}" alt="" loading="lazy" onerror="slotFail(this)">`:`<span class="slot-ini">${esc(initials(it.name))}</span>`;
-  const cls="slot"+(where==="inv"&&got?" got":"")+(where==="inv"&&inBuy?" picked":"");
+  const inv=where==="inv",cls="slot"+(inv&&st==="done"?" got":"")+(inv&&st==="part"?" part":"")+(inv&&inBuy?" picked":"");
   const act=where==="buy"?(U.invMode==="buy"?"slot":"uses"):"slot";
-  return `<button class="${cls}" data-act="${act}" data-k="${esc(x.k)}" title="${esc(it.name)} ×${x.q.toLocaleString()}${got?" · ครบแล้ว":""}${inBuy&&where==="inv"?" · อยู่ในรับซื้อ":""}" aria-label="${esc(it.name)} ${x.q} ชิ้น${got?" ครบแล้ว":""}" aria-pressed="${U.invMode==="check"?got:U.invMode==="buy"?inBuy:"false"}">${pic}${where==="inv"&&got?'<span class="slot-ok" aria-hidden="true">✓</span>':""}${where==="inv"&&inBuy?'<span class="slot-buy" aria-hidden="true">ซื้อ</span>':""}<span class="slot-n num">${qtyShort(x.q)}</span></button>`}
-function invPreview(raws){
-  const withImg=raws.filter(x=>hasImg(x.k)),noImg=raws.filter(x=>!hasImg(x.k));
-  const got=raws.filter(x=>S.have.has(x.k)).length,miss=raws.length-got;
-  const buy=raws.filter(x=>S.buy.has(x.k));
+  const n=where==="buy"?x.rem:(x.rem>0?x.rem:x.need);
+  const tip=`${it.name} · ต้องใช้ ${x.need.toLocaleString()} · มี ${x.have.toLocaleString()} · ขาด ${x.rem.toLocaleString()}`;
+  return `<button class="${cls}" data-act="${act}" data-k="${esc(x.k)}" title="${esc(tip)}" aria-label="${esc(tip)}" aria-pressed="${U.invMode==="buy"?inBuy:"false"}">${pic}${inv&&st==="done"?'<span class="slot-ok" aria-hidden="true">✓</span>':""}${inv&&st==="part"?`<span class="slot-have num" aria-hidden="true">มี ${qtyShort(x.have)}</span>`:""}${inv&&inBuy?'<span class="slot-buy" aria-hidden="true">ซื้อ</span>':""}<span class="slot-n num">${qtyShort(n)}</span></button>`}
+function invPreview(rows){
+  const withImg=rows.filter(x=>hasImg(x.k)),noImg=rows.filter(x=>!hasImg(x.k));
+  const done=rows.filter(x=>stOf(x)==="done").length,part=rows.filter(x=>stOf(x)==="part").length,none=rows.length-done-part;
+  const buy=rows.filter(x=>S.buy.has(x.k)&&x.rem>0),missRows=rows.filter(x=>x.rem>0);
   const modeBar=`<div class="inv-tools"><span class="mode-seg" role="group" aria-label="โหมดคลังรวม">${INV_MODES.map(([v,l])=>`<button data-act="invmode" data-m="${v}" aria-pressed="${U.invMode===v}">${l}</button>`).join("")}</span><span class="inv-hint">${INV_HINT[U.invMode]}</span></div>`;
-  const chip=x=>{const it=ITEMS.get(x.k),g=S.have.has(x.k),p=S.buy.has(x.k);return `<button data-act="slot" data-k="${esc(x.k)}" class="${g?"got":""}${p?" picked":""}">${badge(it,1)}${esc(it.name)} <b class="num">×${x.q.toLocaleString()}</b>${g?' <span class="ok">✓</span>':""}${p?' <span class="buytag">ซื้อ</span>':""}</button>`};
+  const chip=x=>{const it=ITEMS.get(x.k),st=stOf(x),p=S.buy.has(x.k)&&x.rem>0;return `<button data-act="slot" data-k="${esc(x.k)}" class="${st==="done"?"got":st==="part"?"part":""}${p?" picked":""}">${badge(it,1)}${esc(it.name)} <b class="num">${st==="part"?x.have.toLocaleString()+"/":""}${x.need.toLocaleString()}</b>${st==="done"?' <span class="ok">✓</span>':""}${p?' <span class="buytag">ซื้อ</span>':""}</button>`};
   const buyPanel=(buy.length||U.invMode==="buy")?`<div class="inv inv-buy" id="buyPanel"><div class="inv-head">รับซื้อ<span class="num">${buy.length} ชนิด</span></div>
      ${buy.length?`<div class="inv-grid">${buy.map(x=>slotHtml(x,"buy")).join("")}</div>`:`<div class="empty-note" style="padding:18px">ยังว่างอยู่ กดช่องในคลังรวมเพื่อเลือกของที่จะรับซื้อ</div>`}</div>
-     <div class="ptools inv-actions"><button class="btn" data-act="buymiss">เพิ่มของที่ยังขาดทั้งหมด (${miss})</button>${buy.length?`<button class="btn pri" data-act="buysave">บันทึกเป็นรูป</button><button class="btn" data-act="buycopy">คัดลอกรูป</button><label class="chk"><input type="checkbox" id="buynames" ${U.buyNames?"checked":""}> ใส่ชื่อใต้ช่องในรูป</label><button class="btn ghost" data-act="buyclear">ล้างรับซื้อ</button>`:""}</div>`:"";
-  return `<div class="sec"><h3>คลังรวม <span class="hint">ของที่ต้องหาทั้งหมด ${raws.length} ชนิด · ครบ ${got} · ขาด ${miss}</span>${S.have.size||S.buy.size?`<span class="legend"><button class="chip" data-act="invreset">ล้างเช็กลิสต์</button></span>`:""}</h3>
+     <div class="ptools inv-actions"><button class="btn" data-act="buymiss">เพิ่มของที่ยังขาดทั้งหมด (${missRows.length})</button>${buy.length?`<button class="btn pri" data-act="buysave">บันทึกเป็นรูป</button><button class="btn" data-act="buycopy">คัดลอกรูป</button><label class="chk"><input type="checkbox" id="buynames" ${U.buyNames?"checked":""}> ใส่ชื่อใต้ช่องในรูป</label><button class="btn ghost" data-act="buyclear">ล้างรับซื้อ</button>`:""}</div>`:"";
+  return `<div class="sec"><h3>คลังรวม <span class="hint">${rows.length} ชนิด · ครบ ${done} · มีบางส่วน ${part} · ยังไม่มี ${none}</span>${rows.some(x=>x.have)?`<span class="legend"><button class="chip" data-act="invreset">ล้างจำนวนที่มีในรายการนี้</button></span>`:""}</h3>
    ${modeBar}
    <div class="inv-pair">
-   <div class="inv-col">${withImg.length?`<div class="inv"><div class="inv-head">คลังรวม<span class="num">ครบ ${raws.filter(x=>S.have.has(x.k)&&hasImg(x.k)).length}/${withImg.length}</span></div><div class="inv-grid">${withImg.map(x=>slotHtml(x,"inv")).join("")}</div></div>`:""}
+   <div class="inv-col">${withImg.length?`<div class="inv"><div class="inv-head">คลังรวม<span class="num">ครบ ${withImg.filter(x=>stOf(x)==="done").length}/${withImg.length}</span></div><div class="inv-grid">${withImg.map(x=>slotHtml(x,"inv")).join("")}</div></div>`:""}
    ${noImg.length?`<div class="inv-miss"><div class="inv-miss-h">ยังไม่มีรูป <span class="num">${noImg.length} ชนิด</span></div><div class="used">${noImg.map(chip).join("")}</div></div>`:""}</div>
    <div class="inv-col">${buyPanel}</div></div>
   </div>`}
-/* ---------- รับซื้อ: draw the buy list to a PNG (same look as the panel) ---------- */
+// small dialog to type how many of an item you own
+function stockModal(k){const it=ITEMS.get(k);if(!it)return;const P=plan(queueEntries(),false),need=P.need[k]||0,have=stockOf(k);
+  document.getElementById("modal-root").innerHTML=`<div class="modal"><div class="box stockbox"><div class="dhead" style="align-items:center">${badge(it)}<div class="dtitle"><h3 style="margin:0;font:600 18px var(--f-disp)">${esc(it.name)}</h3><div class="crumbs">${need?`ต้องใช้ ${need.toLocaleString()} ชิ้นในรายการคราฟ`:"ไม่ได้ใช้ในรายการคราฟตอนนี้"}</div></div></div>
+   <label for="stk" style="font-size:13px;color:var(--ink2)">มีอยู่แล้วกี่ชิ้น</label>
+   <div class="qty stkqty"><button data-act="stk" data-d="-1" aria-label="ลด">−</button><input id="stk" data-k="${esc(k)}" class="num" inputmode="numeric" value="${have||""}" placeholder="0" autocomplete="off"><button data-act="stk" data-d="1" aria-label="เพิ่ม">+</button></div>
+   <div class="ptools" style="justify-content:space-between">${need?`<button class="btn" data-act="stkfull" data-n="${need}">ครบ (${need.toLocaleString()})</button>`:"<span></span>"}<span class="ptools"><button class="btn ghost" data-act="stkclear">ล้าง</button><button class="btn pri" data-act="mclose">เสร็จ</button></span></div></div></div>`;
+  const i=document.getElementById("stk");i.focus();i.select()}
+/* ---------- รับซื้อ: draw/* ---------- รับซื้อ: draw the buy list to a PNG (same look as the panel) ---------- */
 function loadImg(src){return new Promise(res=>{if(!src)return res(null);const im=new Image();if(/^https?:/i.test(src)&&!src.startsWith(location.origin))im.crossOrigin="anonymous";im.onload=()=>res(im);im.onerror=()=>res(null);im.src=src})}
 async function buyCanvas(){
-  const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));
+  const acc=plan(queueEntries()).gather;
   const items=Object.entries(acc).filter(([k])=>S.buy.has(k)).map(([k,q])=>({k,q,it:ITEMS.get(k)})).sort((a,b)=>a.it.name.localeCompare(b.it.name));
   if(!items.length)return null;
   try{await document.fonts.ready}catch(e){}
@@ -321,21 +353,26 @@ function slotFail(el){BAD.add(el.getAttribute("src"));clearTimeout(slotFail.t);s
 /* ---------- queue ---------- */
 function viewQueue(){
   if(!S.queue.length)return `<section class="page"><div class="pwrap"><div class="intro"><div><h2>รายการคราฟ</h2><p>ยังไม่มีอะไรในรายการ เปิดสูตรที่ต้องการแล้วกด “เพิ่มในรายการคราฟ” ระบบจะรวมวัตถุดิบทุกสูตรให้เป็นรายการเดียวพร้อมต้นทุนรวม</p></div></div><div><button class="btn pri" data-act="view" data-v="recipes">ไปที่สูตรคราฟ</button></div></div></section>`;
-  const acc={},crafts={};let rows="";
-  for(const [i,e] of S.queue.entries()){const r=RECIPES[e.id];const a={},cr={};expand(r,e.n,a,cr);for(const [k,v] of Object.entries(cr))crafts[k]=(crafts[k]||0)+v;
-    let c=feeOf(stepsOf(cr)),m=0;for(const [k,q] of Object.entries(a)){acc[k]=(acc[k]||0)+q;const pm=pmoney(k);if(pm)c=madd(c,pm,q);else m++}
-    rows+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(r.k),1)}<a data-act="openrec" data-id="${r.id}">${esc(r.name)}</a></span><span><div class="qty" style="height:30px"><button data-act="qq" data-i="${i}" data-d="-1" style="height:30px">−</button><input class="num" data-qi="${i}" data-f="qq-${i}" value="${e.n}" style="height:30px;width:44px"><button data-act="qq" data-i="${i}" data-d="1" style="height:30px">+</button></div></span><span class="sum ${m?"miss":""}">${fmtM(c)}${m?` <small>(ขาด ${m})</small>`:""}</span><button class="x" data-act="qdel" data-i="${i}" aria-label="ลบ">×</button></div>`}
-  const raws=rawList(acc),rawT=sumM(raws),steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee),miss=raws.filter(x=>!x.has).length;
+  if(S.have.size){const F=plan(queueEntries(),false);for(const k of S.have)if(F.need[k])S.stock[k]=Math.max(stockOf(k),F.need[k]);S.have.clear();save()} // old ✓ ticks become counts
+  let rows="";
+  for(const [i,e] of S.queue.entries()){const r=RECIPES[e.id],Pi=plan([[r,e.n]],false),c=planCost(Pi),m=Object.keys(Pi.gather).filter(k=>!pmoney(k)).length;
+    rows+=`<div class="tr"><span class="nmcell">${badge(ITEMS.get(r.k),1)}<a data-act="openrec" data-id="${r.id}">${esc(r.name)}</a></span><span><div class="qty" style="height:30px"><button data-act="qq" data-i="${i}" data-d="-1" style="height:30px">−</button><input class="num" data-qi="${i}" data-f="qq-${i}" value="${e.n}" style="height:30px;width:44px"><button data-act="qq" data-i="${i}" data-d="1" style="height:30px">+</button></div></span><span class="sum ${m?"miss":""}">${fmtM(c)}${m?` <small>(ขาดราคา ${m})</small>`:""}</span><button class="x" data-act="qdel" data-i="${i}" aria-label="ลบ">×</button></div>`}
+  const P=plan(queueEntries()),crafts=P.crafts,rowsAll=leafRows(P),mids=midRows(P);
+  const missRows=rowsAll.filter(x=>x.rem>0),rawT=sumM(rowsAll),steps=stepsOf(crafts),fee=feeOf(steps),total=madd(rawT,fee);
+  const full=planCost(plan(queueEntries(),false)),hasStock=usedAny(P),noPrice=missRows.filter(x=>!x.has).length;
+  const done=rowsAll.filter(x=>x.rem<=0).length,part=rowsAll.filter(x=>x.rem>0&&x.have>0).length;
   return `<section class="page"><div class="pwrap">
-  <div class="intro"><div><h2>รายการคราฟ</h2><p>รวมวัตถุดิบจากทุกสูตรในรายการ ใช้โหมดคราฟ/ซื้อเดียวกับหน้าสูตร</p></div><div class="ptools"><button class="btn" data-act="copyq">คัดลอกรายการวัตถุดิบ</button><button class="btn ghost" data-act="qclear">ล้างรายการ</button></div></div>
-  <div class="totals"><div><label>ต้นทุนรวมทั้งรายการ</label><div class="big">${bigM(total)}</div><div class="sub">${S.queue.length} สูตร${miss?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}</div>
-   <div><label>วัตถุดิบที่ต้องหา</label><div class="mid">${raws.length}</div><div class="sub">${raws.reduce((s,x)=>s+x.q,0).toLocaleString()} ชิ้น</div></div>
+  <div class="intro"><div><h2>รายการคราฟ</h2><p>รวมวัตถุดิบจากทุกสูตรในรายการ หักของที่มีอยู่แล้วก่อน (รวมของกลางทาง) ใช้โหมดคราฟ/ซื้อเดียวกับหน้าสูตร</p></div><div class="ptools"><button class="btn" data-act="copyq">คัดลอกของที่ยังขาด</button><button class="btn ghost" data-act="qclear">ล้างรายการ</button></div></div>
+  <div class="totals"><div><label>${hasStock?"ยังต้องจ่าย":"ต้นทุนรวมทั้งรายการ"}</label><div class="big">${bigM(total)}</div>${hasStock?`<div class="sub">ต้นทุนเต็มถ้าไม่มีของเลย ${fmtM(full)}</div>`:""}<div class="sub">${S.queue.length} สูตร${noPrice?' · <span class="warn">ยังไม่ครบ</span>':""}</div>${S.guar&&steps?`<div class="sub">รวมค่าการันตี ${fmt(fee.j)} Jil</div>`:""}</div>
+   <div><label>ยังต้องหา</label><div class="mid ${missRows.length?"":"ok"}">${missRows.length} <span style="font-size:13px">ชนิด</span></div><div class="sub">${missRows.reduce((s,x)=>s+x.rem,0).toLocaleString()} ชิ้น · ครบแล้ว ${done} · มีบางส่วน ${part}</div></div>
    <div><label>ครั้งที่ต้องคราฟ</label><div class="mid">${steps}</div><div class="sub">${Object.keys(crafts).length} สูตร</div>${guarBox()}</div>
-   <div><label>ยังไม่มีราคา</label><div class="mid ${miss?"warn":""}">${miss}</div><div class="sub">${miss?"กรอกด้านล่าง":"ครบ"}</div></div></div>
-  <div class="sec q"><h3>สูตรในรายการ</h3><div class="tbl"><div class="tr h"><span>ไอเทม</span><span>จำนวน</span><span class="r">ต้นทุน</span><span></span></div>${rows}</div></div>
-  ${invPreview(raws)}
-  <div class="sec shop"><h3>วัตถุดิบรวม <span class="hint">ตารางราคา</span></h3><div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">จำนวน</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
-  ${raws.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr"><span class="nmcell">${badge(it,1)}${esc(it.name)}</span><span class="r num">×${x.q.toLocaleString()}</span><span>${pbox(x.k,"q-"+x.k,"ใส่ราคา",x.has?"":"empty")}</span><span class="sum ${x.has?"":"miss"}">${x.has?fmtM(x.sub):"—"}</span><span class="share"><i style="width:${shareOf(x.sub,rawT)*100}%"></i></span></div>`}).join("")}${feeRow(steps,fee)}</div></div></div></section>`}
+   <div><label>ยังไม่มีราคา</label><div class="mid ${noPrice?"warn":""}">${noPrice}</div><div class="sub">${noPrice?"กรอกด้านล่าง":"ครบ"}</div></div></div>
+  <div class="sec q"><h3>สูตรในรายการ</h3><div class="tbl"><div class="tr h"><span>ไอเทม</span><span>จำนวน</span><span class="r">ต้นทุนเต็ม</span><span></span></div>${rows}</div></div>
+  ${invPreview(rowsAll)}
+  ${mids.length?`<div class="sec mids"><h3>ของกลางทาง <span class="hint">ของที่ต้องคราฟก่อน ถ้ามีอยู่แล้วกรอกจำนวน เว็บจะไม่แตกสูตรของส่วนนั้นอีก</span></h3><div class="tbl"><div class="tr h"><span>ไอเทม</span><span class="r">ต้องใช้</span><span class="r">มีแล้ว</span><span class="r">ต้องคราฟ</span></div>
+   ${mids.map(x=>{const it=ITEMS.get(x.k);return `<div class="tr ${x.craft?"":"done"}"><span class="nmcell">${badge(it,1)}<a data-act="item" data-k="${esc(x.k)}">${esc(it.name)}</a></span><span class="r num">×${x.need.toLocaleString()}</span><span><input class="pin stkin" data-stock="${esc(x.k)}" data-f="sm-${esc(x.k)}" inputmode="numeric" placeholder="0" value="${stockOf(x.k)||""}" aria-label="มี ${esc(it.name)} แล้วกี่ชิ้น"></span><span class="r num">${x.craft?"×"+x.craft.toLocaleString():'<span class="okt">ไม่ต้องคราฟ</span>'}</span></div>`}).join("")}</div></div>`:""}
+  <div class="sec shop"><h3>วัตถุดิบรวม  <div class="sec shop stk"><h3>วัตถุดิบรวม <span class="hint">กรอก “มีแล้ว” ได้เลย ราคาคิดเฉพาะส่วนที่ยังขาด</span></h3><div class="tbl"><div class="tr h"><span>วัตถุดิบ</span><span class="r">ต้องใช้</span><span class="r">มีแล้ว</span><span class="r">ยังขาด</span><span class="r">ราคา/ชิ้น</span><span class="r">รวม</span><span>สัดส่วน</span></div>
+  ${rowsAll.map(x=>{const it=ITEMS.get(x.k),st=stOf(x);return `<div class="tr ${st}"><span class="nmcell">${badge(it,1)}<a data-act="item" data-k="${esc(x.k)}">${esc(it.name)}</a></span><span class="r num">×${x.need.toLocaleString()}</span><span><input class="pin stkin" data-stock="${esc(x.k)}" data-f="sq-${esc(x.k)}" inputmode="numeric" placeholder="0" value="${stockOf(x.k)||""}" aria-label="มี ${esc(it.name)} แล้วกี่ชิ้น"></span><span class="r num">${st==="done"?'<span class="okt">ครบ</span>':`<span class="${st==="part"?"partt":""}">${x.rem.toLocaleString()}</span>`}</span><span>${pbox(x.k,"q-"+x.k,"ใส่ราคา",x.has||!x.rem?"":"empty")}</span><span class="sum ${x.has||!x.rem?"":"miss"}">${!x.rem?"—":x.has?fmtM(x.sub):"—"}</span><span class="share"><i style="width:${shareOf(x.sub,rawT)*100}%"></i></span></div>`}).join("")}${S.guar&&steps?`<div class="tr feerow"><span class="nmcell">ค่าการันตี <span class="ghint">${GUAR_FEE} Jil × ทุกชิ้นที่คราฟ</span></span><span class="r num">×${steps.toLocaleString()}</span><span></span><span></span><span class="r num">${GUAR_FEE} Jil</span><span class="sum">${fmt(fee.j)} Jil</span><span></span></div>`:""}</div></div></div></section>`}
 
 /* ---------- images ---------- */
 const fileKey=n=>norm(n.replace(/\.[a-z0-9]+$/i,"").replace(/[_\-]+/g," "));
@@ -362,6 +399,7 @@ async function exportPack(){
   const ledger={app:"Razan Craft Ledger",version:1,exportedAt:new Date().toISOString(),
     prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[nm(k),v])),
     cur:Object.fromEntries(Object.entries(S.cur).map(([k,v])=>[nm(k),v])),guarantee:S.guar,rate:S.rate,
+    stock:Object.fromEntries(Object.entries(S.stock).map(([k,v])=>[nm(k),v])),
     mode:Object.fromEntries(Object.entries(S.mode).map(([k,v])=>[nm(k),v])),
     queue:S.queue.map(q=>({recipe:RECIPES[q.id].name,qty:q.n})),images:imgs};
   zip.file("ledger.json",JSON.stringify(ledger,null,1));
@@ -375,6 +413,7 @@ function applyLedger(L){let n=0;const key=x=>{const k=norm(x);return ITEMS.has(k
   for(const [x,v] of Object.entries(L.mode||{})){const k=key(x);if(k&&(v==="buy"||v==="craft"))S.mode[k]=v}
   for(const [x,v] of Object.entries(L.cur||{})){const k=key(x);if(k){if(v==="b")S.cur[k]="b";else delete S.cur[k]}}
   if(typeof L.guarantee==="boolean")S.guar=L.guarantee;if(+L.rate>0)S.rate=+L.rate;
+  for(const [x,v] of Object.entries(L.stock||{})){const k=key(x);if(k&&+v>=0){if(+v)S.stock[k]=Math.floor(+v);else delete S.stock[k]}}
   if(Array.isArray(L.queue))for(const q of L.queue){const r=RECIPES.find(r=>norm(r.name)===norm(q.recipe||""));if(r&&q.qty>0){const ex=S.queue.find(e=>e.id===r.id);ex?ex.n=Math.max(ex.n,q.qty):S.queue.push({id:r.id,n:q.qty})}}
   return n}
 async function importFiles(entries){ // entries: [{path, blob}]
@@ -414,10 +453,14 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="uses")openUses(b.dataset.k);
   else if(a==="cur"){const k=b.dataset.k;if(S.cur[k]==="b")delete S.cur[k];else S.cur[k]="b";save();render()}
   else if(a==="invmode"){U.invMode=b.dataset.m;render()}
-  else if(a==="slot"){const k=b.dataset.k;if(U.invMode==="check"){S.have.has(k)?S.have.delete(k):S.have.add(k);save();render()}else if(U.invMode==="buy"){S.buy.has(k)?S.buy.delete(k):S.buy.add(k);save();render()}else openUses(k)}
-  else if(a==="buymiss"){const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));let n=0;for(const k of Object.keys(acc))if(!S.have.has(k)&&!S.buy.has(k)){S.buy.add(k);n++}save();render();toast(n?"เพิ่ม "+n+" ชนิดในรับซื้อ":"ของที่ขาดอยู่ในรับซื้อครบแล้ว")}
+  else if(a==="slot"){const k=b.dataset.k;if(U.invMode==="count")stockModal(k);else if(U.invMode==="buy"){S.buy.has(k)?S.buy.delete(k):S.buy.add(k);save();render()}else openUses(k)}
+  else if(a==="buymiss"){let n=0;for(const [k,q] of Object.entries(plan(queueEntries()).gather))if(q>0&&!S.buy.has(k)){S.buy.add(k);n++}save();render();toast(n?"เพิ่ม "+n+" ชนิดในรับซื้อ":"ของที่ขาดอยู่ในรับซื้อครบแล้ว")}
+  else if(a==="stockedit")stockModal(b.dataset.k);
+  else if(a==="stk"){const i=document.getElementById("stk");const v=Math.max(0,(parseInt(i.value)||0)+ +b.dataset.d);i.value=v||"";setStock(i.dataset.k,v);render()}
+  else if(a==="stkfull"){const i=document.getElementById("stk");i.value=b.dataset.n;setStock(i.dataset.k,+b.dataset.n);render()}
+  else if(a==="stkclear"){const i=document.getElementById("stk");i.value="";setStock(i.dataset.k,0);render()}
   else if(a==="buyclear"){if(b.dataset.sure){S.buy.clear();save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อยืนยัน";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างรับซื้อ"}},3000)}}
-  else if(a==="invreset"){if(b.dataset.sure){S.have.clear();S.buy.clear();save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อล้างทั้งเช็กลิสต์และรับซื้อ";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างเช็กลิสต์"}},3000)}}
+  else if(a==="invreset"){if(b.dataset.sure){const F=plan(queueEntries(),false);for(const k of Object.keys(F.need))delete S.stock[k];save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อล้างจำนวนที่มีของทุกชิ้นในรายการนี้";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างจำนวนที่มีในรายการนี้"}},3000)}}
   else if(a==="buysave")buyExport("save");
   else if(a==="buycopy")buyExport("copy");
   else if(a==="usel"){U.useSel=b.dataset.k;U.useShow=true;if(U.view!=="uses"){U.view="uses";render._scrolled=false}render();document.getElementById("detail")?.scrollTo(0,0)}
@@ -434,8 +477,8 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
   else if(a==="qclear"){if(b.dataset.sure){S.queue=[];save();render()}else{b.dataset.sure="1";b.textContent="กดอีกครั้งเพื่อยืนยัน";setTimeout(()=>{if(b.isConnected){delete b.dataset.sure;b.textContent="ล้างรายการ"}},3000)}}
   else if(a==="imgdel"){const k=b.dataset.k;if(IMG[k])URL.revokeObjectURL(IMG[k]);delete IMG[k];delete BLOBS[k];IDB.del(k).catch(()=>{});render()}
   else if(a==="pbf"){U.pbFilter=b.dataset.t;render()}
-  else if(a==="copyshop"){const acc={},cr={};expand(RECIPES[U.sel],Math.max(1,U.qty|0),acc,cr);copy(RECIPES[U.sel].name+" x"+U.qty+"\n"+listText(acc))}
-  else if(a==="copyq"){const acc={},cr={};S.queue.forEach(x=>expand(RECIPES[x.id],x.n,acc,cr));copy(listText(acc))}
+  else if(a==="copyshop"){const acc=plan([[RECIPES[U.sel],Math.max(1,U.qty|0)]]).gather;copy(RECIPES[U.sel].name+" x"+U.qty+"\n"+listText(acc))}
+  else if(a==="copyq"){copy(listText(plan(queueEntries()).gather))}
   else if(a==="zipout")exportPack();
   else if(a==="export")modal("export");else if(a==="import")modal("import");
   else if(a==="mclose")document.getElementById("modal-root").innerHTML="";
@@ -445,7 +488,9 @@ document.addEventListener("click",e=>{const b=e.target.closest("[data-act]");if(
 function modal(kind){const exp=kind==="export";const txt=exp?JSON.stringify({prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[ITEMS.get(k)?.name||k,v])),cur:Object.fromEntries(Object.entries(S.cur).map(([k,v])=>[ITEMS.get(k)?.name||k,v]))},null,1):"";
   document.getElementById("modal-root").innerHTML=`<div class="modal"><div class="box"><h3 style="margin:0;font-family:var(--f-disp)">${exp?"ส่งออกราคา":"นำเข้าราคา"}</h3><p style="margin:0;color:var(--ink2)">${exp?"คัดลอกข้อความนี้ไปเก็บไว้หรือส่งให้เพื่อนในกิลด์":"วางข้อความ JSON ที่ได้จากปุ่มส่งออก ราคาเดิมของไอเทมเดียวกันจะถูกแทนที่"}</p><textarea id="mta" ${exp?"readonly":""} placeholder='{"prices":{"Zinc Ore":120}}'>${esc(txt)}</textarea><div id="merr" style="color:var(--warn);font-size:12px"></div><div class="ptools" style="justify-content:flex-end"><button class="btn ghost" data-act="mclose">ปิด</button>${exp?'<button class="btn pri" data-act="mcopy">คัดลอก</button>':'<button class="btn pri" data-act="mapply">นำเข้า</button>'}</div></div></div>`}
 document.addEventListener("input",e=>{const t=e.target;
-  if(t.dataset.guar!=null){S.guar=t.checked;save();render()}
+  if(t.id==="stk"){setStock(t.dataset.k,t.value);render()}
+  else if(t.dataset.stock!=null){setStock(t.dataset.stock,t.value.replace(/[, ]/g,""));render()}
+  else if(t.dataset.guar!=null){S.guar=t.checked;save();render()}
   else if(t.id==="rate"){const v=+t.value.replace(/[, ]/g,"");S.rate=v>0?v:null;save();render()}
   else if(t.dataset.price!=null){const v=t.value.replace(/[, ]/g,"");if(v===""||isNaN(+v))delete S.prices[t.dataset.price];else S.prices[t.dataset.price]=+v;save();render()}
   else if(t.id==="q"){U.q=t.value;render()}
@@ -454,7 +499,7 @@ document.addEventListener("input",e=>{const t=e.target;
   else if(t.id==="buynames"){U.buyNames=t.checked}
   else if(t.id==="qty"){const v=parseInt(t.value);if(v>0){U.qty=v;render()}}
   else if(t.dataset.qi!=null){const v=parseInt(t.value);if(v>0){S.queue[+t.dataset.qi].n=v;save();render()}}});
-document.addEventListener("keydown",e=>{if(e.key==="Escape"){if(document.getElementById("modal-root").innerHTML)document.getElementById("modal-root").innerHTML="";else if(U.view==="uses"&&U.useShow){U.useShow=false;render()}else if(U.showDetail){U.showDetail=false;render()}}});
+document.addEventListener("keydown",e=>{if(e.key==="Enter"&&e.target.id==="stk"){document.getElementById("modal-root").innerHTML="";return}if(e.key==="Escape"){if(document.getElementById("modal-root").innerHTML)document.getElementById("modal-root").innerHTML="";else if(U.view==="uses"&&U.useShow){U.useShow=false;render()}else if(U.showDetail){U.showDetail=false;render()}}});
 // detail sheet visibility on narrow screens
 const st=document.createElement("style");st.textContent="@media (max-width:1000px){.v-recipes .detail[data-closed],.v-uses .detail[data-closed]{display:none}}";document.head.appendChild(st);
 render();
