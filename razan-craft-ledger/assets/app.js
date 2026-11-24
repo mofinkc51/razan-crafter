@@ -24,15 +24,17 @@ const fmt=n=>{if(n==null||isNaN(n))return "—";const r=Math.round(n*100)/100;re
 /* images: IMG = your uploads (IndexedDB, this browser) · REPO_IMG = files in the repo's images/ folder or data/image-urls.json */
 let IMG={},REPO_IMG={},BLOBS={},ASSETS=true;const BAD=new Set();
 const imgSrc=k=>IMG[k]||REPO_IMG[k]||null;
+const knownKey=k=>ITEMS.has(k)||EQ_KEYS.has(k); // recipe items + wearable equipment can both have pictures
+const itemName=k=>ITEMS.get(k)?.name||EQ_NAME.get(k)||k;
 function imgFail(el){BAD.add(el.getAttribute("src"));const sp=el.parentElement;sp.className="badge m"+(sp.dataset.sm?" sm":"");sp.textContent=sp.dataset.i||"?"}
 const badge=(it,sm)=>imgSrc(it.k)&&!BAD.has(imgSrc(it.k))?`<span class="badge img${sm?" sm":""}" data-i="${esc(initials(it.name))}"${sm?' data-sm="1"':""} aria-hidden="true"><img src="${esc(imgSrc(it.k))}" alt="" loading="lazy" onerror="imgFail(this)"></span>`:`<span class="badge ${it.cat}${sm?" sm":""}" aria-hidden="true">${esc(initials(it.name))}</span>`;
 const uplBtn=(k,label)=>ASSETS?`<label class="upl">${label}<input type="file" accept="image/*" data-img="${esc(k)}" aria-label="${label}"></label>`:"";
 
 /* ---------- state ---------- */
 const LS="razan-ledger-v1";
-let S={prices:{},cur:{},mode:{},queue:[],have:new Set(),buy:new Set(),guar:true,rate:null,stock:{}};
-function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[]);S.cur=Object.fromEntries(obj.cur||[]);S.guar=obj.guar===undefined?true:!!obj.guar;S.rate=+obj.rate>0?+obj.rate:null;S.stock=Object.fromEntries((obj.stock||[]).filter(([k,v])=>v>0))}
-const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],cur:Object.entries(S.cur),guar:S.guar,rate:S.rate,stock:Object.entries(S.stock),at:Date.now()});
+let S={prices:{},cur:{},mode:{},queue:[],have:new Set(),buy:new Set(),guar:true,rate:null,stock:{},sets:[]};
+function load(obj){if(!obj)return;S.prices=Object.fromEntries(obj.prices||[]);S.mode=Object.fromEntries(obj.mode||[]);S.queue=(obj.queue||[]).filter(q=>RECIPES[q[0]]).map(([id,n])=>({id,n}));S.have=new Set(obj.have||[]);S.buy=new Set(obj.buy||[]);S.cur=Object.fromEntries(obj.cur||[]);S.guar=obj.guar===undefined?true:!!obj.guar;S.rate=+obj.rate>0?+obj.rate:null;S.stock=Object.fromEntries((obj.stock||[]).filter(([k,v])=>v>0));S.sets=Array.isArray(obj.sets)?obj.sets.map(cleanSet).filter(Boolean):[]}
+const dump=()=>({v:1,prices:Object.entries(S.prices),mode:Object.entries(S.mode),queue:S.queue.map(q=>[q.id,q.n]),have:[...S.have],buy:[...S.buy],cur:Object.entries(S.cur),guar:S.guar,rate:S.rate,stock:Object.entries(S.stock),sets:S.sets,at:Date.now()});
 try{const s=localStorage.getItem(LS);if(s)load(JSON.parse(s))}catch(e){}
 let dbDoc=null,saveT=null;
 function save(){try{localStorage.setItem(LS,JSON.stringify(dump()))}catch(e){}clearTimeout(saveT);saveT=setTimeout(async()=>{const d=dump();
@@ -46,7 +48,7 @@ const IDB=(()=>{let p;const open=()=>p||(p=new Promise((res,rej)=>{const r=index
   try{const all=await IDB.all();for(const [k,bl] of Object.entries(all)){BLOBS[k]=bl;IMG[k]=URL.createObjectURL(bl)}}catch(e){}
   const enc=p=>/^(https?:|data:|blob:)/i.test(p)?p:p.split("/").map(encodeURIComponent).join("/");
   for(const f of ["data/image-urls.json","data/images.json"]){try{const r=await fetch(f,{cache:"no-cache"});if(!r.ok)continue;const m=await r.json();
-    for(const [n,pth] of Object.entries(m)){const k=fileKey(n);if(ITEMS.has(k)&&typeof pth==="string")REPO_IMG[k]=enc(pth)}}catch(e){}}
+    for(const [n,pth] of Object.entries(m)){const k=fileKey(n);if(knownKey(k)&&typeof pth==="string")REPO_IMG[k]=enc(pth)}}catch(e){}}
   render()})();
 
 /* ---------- money: Jil (in-game) and ฿ (real money) are always kept apart ---------- */
@@ -116,8 +118,8 @@ function expand(rec,n,acc,crafts){crafts[rec.k]=(crafts[rec.k]||0)+n;
 
 /* ---------- ui state ---------- */
 let U={view:"recipes",tab:"Wolf",q:"",type:"",sel:0,qty:1,open:new Set(),pbFilter:"all",pbQ:"",showDetail:false,useSel:"",useQ:"",useCat:"all",useTab:"",useDirect:false,useShow:false,invMode:"view",buyNames:false};
-try{const s=JSON.parse(localStorage.getItem(LS+"-ui")||"{}");Object.assign(U,{tab:s.tab||U.tab,sel:s.sel??U.sel,view:s.view||U.view,useSel:s.useSel||""})}catch(e){}
-const saveUI=()=>{try{localStorage.setItem(LS+"-ui",JSON.stringify({tab:U.tab,sel:U.sel,view:U.view,useSel:U.useSel}))}catch(e){}};
+try{const s=JSON.parse(localStorage.getItem(LS+"-ui")||"{}");Object.assign(U,{tab:s.tab||U.tab,sel:s.sel??U.sel,view:s.view||U.view,useSel:s.useSel||"",setCls:s.setCls||"",setA:s.setA||""})}catch(e){}
+const saveUI=()=>{try{localStorage.setItem(LS+"-ui",JSON.stringify({tab:U.tab,sel:U.sel,view:U.view,useSel:U.useSel,setCls:U.setCls,setA:U.setA}))}catch(e){}};
 
 function render(){memo=new Map();
   const sameView=render._view===U.view;render._view=U.view;
@@ -125,7 +127,7 @@ function render(){memo=new Map();
   const tblX=sameView?[...document.querySelectorAll("#main .tbl")].map(t=>t.scrollLeft):[];const focus=document.activeElement?.dataset?.f;const caret=document.activeElement?.selectionStart;
   document.querySelectorAll("#views button").forEach(b=>b.setAttribute("aria-pressed",b.dataset.v===U.view));
   const main=document.getElementById("main");main.className=U.view==="recipes"?"v-recipes":U.view==="uses"?"v-uses":"v-other";
-  main.innerHTML=U.view==="recipes"?viewRecipes():U.view==="uses"?viewUses():U.view==="prices"?viewPrices():viewQueue();
+  main.innerHTML=U.view==="recipes"?viewRecipes():U.view==="uses"?viewUses():U.view==="prices"?viewPrices():U.view==="sets"?viewSets():viewQueue();
   for(const [c,t,l] of keep){const el=main.querySelector("."+c);if(el){el.scrollTop=t;el.scrollLeft=l}}
   main.querySelectorAll(".tbl").forEach((t,i)=>{if(tblX[i])t.scrollLeft=tblX[i]});
   const total=ITEMS.size,priced=[...ITEMS.keys()].filter(k=>S.prices[k]!=null&&S.prices[k]!=="").length;
@@ -380,7 +382,7 @@ async function saveImgs(){}
 async function uploadFor(k,file){try{await IDB.put(k,file)}catch(e){toast("บันทึกรูป "+file.name+" ในเบราว์เซอร์ไม่สำเร็จ");return false}
   if(IMG[k])URL.revokeObjectURL(IMG[k]);BLOBS[k]=file;IMG[k]=URL.createObjectURL(file);return true}
 async function bulkUpload(files){let ok=0;const miss=[];toast("กำลังอัปโหลด "+files.length+" ไฟล์…");
-  for(const f of files){const k=fileKey(f.name);if(!ITEMS.has(k)){miss.push(f.name);continue}if(await uploadFor(k,f))ok++}
+  for(const f of files){const k=fileKey(f.name);if(!knownKey(k)){miss.push(f.name);continue}if(await uploadFor(k,f))ok++}
   await saveImgs();render();
   if(miss.length)showMiss(ok,miss);else toast("ใส่รูปแล้ว "+ok+" ไอเทม")}
 function showMiss(ok,miss){document.getElementById("modal-root").innerHTML=`<div class="modal"><div class="box"><h3 style="margin:0;font-family:var(--f-disp)">ใส่รูปแล้ว ${ok} ไอเทม</h3><p style="margin:0;color:var(--ink2)">${miss.length} ไฟล์ไม่ตรงกับชื่อไอเทมใดเลย ตั้งชื่อไฟล์ให้ตรงกับชื่อในสมุดราคา เช่น <code>Zinc Ore.png</code> หรือ <code>zinc_ore.png</code> แล้วอัปโหลดใหม่ หรือกดปุ่มเพิ่มรูปที่แถวของไอเทมนั้นโดยตรง</p><textarea readonly>${esc(miss.join("\n"))}</textarea><div class="ptools" style="justify-content:flex-end"><button class="btn pri" data-act="mclose">ปิด</button></div></div></div>`}
@@ -394,14 +396,14 @@ async function exportPack(){
   if(!window.JSZip){toast("โหลดตัวสร้าง .zip ไม่สำเร็จ ลองรีเฟรชหน้า");return}
   toast("กำลังรวมไฟล์…");const zip=new JSZip(),imgs={};let fail=0;
   for(const k of new Set([...Object.keys(IMG),...Object.keys(REPO_IMG)])){try{let b=BLOBS[k];if(!b){const r=await fetch(REPO_IMG[k]);if(!r.ok)throw 0;b=await r.blob()}
-    const fn="images/"+safeName(ITEMS.get(k)?.name||k)+"."+(EXT[b.type]||"png");zip.file(fn,b);imgs[ITEMS.get(k)?.name||k]=fn}catch(e){fail++}}
+    const fn="images/"+safeName(itemName(k))+"."+(EXT[b.type]||"png");zip.file(fn,b);imgs[itemName(k)]=fn}catch(e){fail++}}
   const nm=k=>ITEMS.get(k)?.name||k;
   const ledger={app:"Razan Craft Ledger",version:1,exportedAt:new Date().toISOString(),
     prices:Object.fromEntries(Object.entries(S.prices).map(([k,v])=>[nm(k),v])),
     cur:Object.fromEntries(Object.entries(S.cur).map(([k,v])=>[nm(k),v])),guarantee:S.guar,rate:S.rate,
     stock:Object.fromEntries(Object.entries(S.stock).map(([k,v])=>[nm(k),v])),
     mode:Object.fromEntries(Object.entries(S.mode).map(([k,v])=>[nm(k),v])),
-    queue:S.queue.map(q=>({recipe:RECIPES[q.id].name,qty:q.n})),images:imgs};
+    queue:S.queue.map(q=>({recipe:RECIPES[q.id].name,qty:q.n})),sets:S.sets,images:imgs};
   zip.file("ledger.json",JSON.stringify(ledger,null,1));
   zip.file("images/README.txt","วางรูปไอเทมในโฟลเดอร์นี้ ตั้งชื่อไฟล์ตามชื่อไอเทม เช่น Zinc Ore.png แล้วนำเข้าด้วยปุ่ม นำเข้าจากโฟลเดอร์ หรือ นำเข้าแพ็ก .zip\n");
   const blob=await zip.generateAsync({type:"blob"});const d=new Date();
@@ -414,6 +416,7 @@ function applyLedger(L){let n=0;const key=x=>{const k=norm(x);return ITEMS.has(k
   for(const [x,v] of Object.entries(L.cur||{})){const k=key(x);if(k){if(v==="b")S.cur[k]="b";else delete S.cur[k]}}
   if(typeof L.guarantee==="boolean")S.guar=L.guarantee;if(+L.rate>0)S.rate=+L.rate;
   for(const [x,v] of Object.entries(L.stock||{})){const k=key(x);if(k&&+v>=0){if(+v)S.stock[k]=Math.floor(+v);else delete S.stock[k]}}
+  if(Array.isArray(L.sets))for(const x of L.sets){const o=cleanSet(x);if(!o)continue;const i=S.sets.findIndex(s=>s.id===x.id);i>=0?S.sets[i]=o:S.sets.push(o)}
   if(Array.isArray(L.queue))for(const q of L.queue){const r=RECIPES.find(r=>norm(r.name)===norm(q.recipe||""));if(r&&q.qty>0){const ex=S.queue.find(e=>e.id===r.id);ex?ex.n=Math.max(ex.n,q.qty):S.queue.push({id:r.id,n:q.qty})}}
   return n}
 async function importFiles(entries){ // entries: [{path, blob}]
@@ -423,7 +426,7 @@ async function importFiles(entries){ // entries: [{path, blob}]
   const imgs=entries.filter(e=>/\.(png|jpe?g|gif|webp|svg)$/i.test(e.path));
   if(imgs.length&&!ASSETS)toast("เบราว์เซอร์นี้เก็บรูปไม่ได้ นำเข้าเฉพาะราคา");
   else for(const e of imgs){const tail=e.path.split("/").slice(-2).join("/").toLowerCase();const nm=imgMap[tail]||imgMap["images/"+e.path.split("/").pop().toLowerCase()];
-    const k=nm?norm(nm):fileKey(e.path.split("/").pop());if(!ITEMS.has(k)){miss.push(e.path.split("/").pop());continue}
+    const k=nm?norm(nm):fileKey(e.path.split("/").pop());if(!knownKey(k)){miss.push(e.path.split("/").pop());continue}
     const type=e.blob.type||("image/"+(e.path.split(".").pop().toLowerCase().replace("jpg","jpeg").replace("svg","svg+xml")));
     if(await uploadFor(k,new File([e.blob],e.path.split("/").pop(),{type})))ok++}
   if(ok)await saveImgs();save();render();

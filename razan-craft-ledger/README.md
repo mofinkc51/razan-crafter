@@ -16,6 +16,8 @@ index.html               หน้าเว็บ
 assets/app.css           สไตล์
 assets/app.js            โค้ดทั้งหมด (ไม่มี build step)
 data/recipes.js          ข้อมูลสูตร
+data/equipment.js        สเตตัสอุปกรณ์ (อาวุธ ชุด หมวก เครื่องประดับ รองเท้า สัตว์เลี้ยง)
+assets/sets.js           แท็บจัดเซ็ต
 data/images.json         สร้างอัตโนมัติจากโฟลเดอร์ images/ (อย่าแก้เอง)
 data/image-urls.json     กำหนดรูปจาก URL เองได้ (ดูด้านล่าง)
 images/                  วางรูปไอเทมที่นี่
@@ -46,6 +48,8 @@ scripts/build-images.mjs สร้าง data/images.json
 
 ขั้นตอนที่สะดวกที่สุด: อัปโหลดรูปในหน้าเว็บ → กด **ส่งออกแพ็ก .zip** → แตกไฟล์ แล้วคัดลอกโฟลเดอร์ `images/` ในนั้นมาวางทับใน repo → commit แล้ว push
 
+รูปอุปกรณ์ในแท็บ **จัดเซ็ต** (รวมรองเท้าและสัตว์เลี้ยง) ใช้วิธีเดียวกัน ตั้งชื่อไฟล์ตามชื่อไอเทม เช่น `S. PaperBug9.png` หรือกดช่องในเซ็ตแล้วเลือกโหมด **ใส่รูป** เพื่อใส่รูปทีละชิ้น
+
 ## ข้อมูลของผู้ใช้
 
 ราคา โหมดคราฟ/ซื้อ และรายการคราฟเก็บใน `localStorage` ของแต่ละเบราว์เซอร์ ไม่มีการส่งข้อมูลออกไปที่ไหน
@@ -61,5 +65,6 @@ scripts/build-images.mjs สร้าง data/images.json
 
 - สูตรคราฟ: [tailstailssimulator.online/crafting](https://www.tailstailssimulator.online/crafting)
 - สูตร Material เพิ่มเติม: [12TailsOnline Wiki (TH) · Razan](https://12tailsonline.fandom.com/th/wiki/Razan#Material)
+- สเตตัสอุปกรณ์ในแท็บ “จัดเซ็ต”: [Tales of Tails · Status Simulator](https://talesoftails.net) (ข้อมูล ณ 24 พ.ย. 2026 ใช้เฉพาะตัวเลขสเตตัส ไม่ได้นำรูปมาใช้)
 
 เว็บนี้เป็นเครื่องมือที่แฟนเกมทำขึ้น ไม่มีส่วนเกี่ยวข้องกับผู้พัฒนาหรือผู้ให้บริการเกม 12Tails Online
