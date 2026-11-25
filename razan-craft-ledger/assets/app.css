@@ -2,33 +2,33 @@
 img{max-width:100%}[hidden]{display:none!important}
 /* Layout: forge ledger — category rail | recipe index | breakdown sheet with live Jil totals */
 :root{
-  --bg:#eef0ec; --panel:#f8f9f6; --raise:#ffffff; --line:#d5d9d0; --line2:#e4e7e0;
-  --ink:#1d2430; --ink2:#4a5361; --ink3:#7b8491;
-  --jil:#a8740f; --jil-soft:#f6ead0; --forge:#2f6b5e; --forge-soft:#dcebe5;
-  --warn:#b4462f; --warn-soft:#f8e1da; --ok:#2f7a45; --ok-soft:#dff0e3;
-  --w:#b0553a; --a:#3a6aa8; --c:#7a55a8; --m:#5b6b4f; --t:#a8803a; --s:#3a8a96; --f:#a8743a;
-  --f-disp:"Chakra Petch","IBM Plex Sans Thai",system-ui,sans-serif;
-  --f-body:"IBM Plex Sans Thai",system-ui,-apple-system,"Segoe UI",sans-serif;
-  --f-num:"IBM Plex Mono",ui-monospace,Menlo,monospace;
-  --r:8px;
+  --bg:#edf1f6; --panel:#f8fafc; --raise:#ffffff; --line:#d2dae5; --line2:#e3e8ef;
+  --ink:#1b2333; --ink2:#47526a; --ink3:#77819a;
+  --jil:#a96d06; --jil-soft:#fbefd6; --forge:#17795a; --forge-soft:#d9f1e7;
+  --warn:#c2412b; --warn-soft:#fbe3dd; --ok:#1f8a4c; --ok-soft:#dcf3e4;
+  --w:#c0583a; --a:#3a6fb8; --c:#8358b8; --m:#5b7a4f; --t:#b08332; --s:#2f8f9c; --f:#b07a3a;
+  --f-disp:"Mitr","IBM Plex Sans Thai Looped",system-ui,sans-serif;
+  --f-body:"IBM Plex Sans Thai Looped",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-num:"IBM Plex Sans Thai Looped",system-ui,sans-serif;
+  --r:10px; --r-lg:16px; --navh:0px;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#14181d; --panel:#1a1f26; --raise:#20262e; --line:#2f3741; --line2:#262d36;
-  --ink:#e7eaee; --ink2:#b3bac4; --ink3:#848d99;
-  --jil:#e2ad48; --jil-soft:#3a2f1a; --forge:#6cc0a9; --forge-soft:#1d3530;
-  --warn:#ee8a72; --warn-soft:#3c2420; --ok:#7acb8f; --ok-soft:#1d3324;
-  --w:#e08a6e; --a:#7fa6e0; --c:#b393e0; --m:#a5b88f; --t:#e0bb72; --s:#72c4cf; --f:#e0ae72;
+  --bg:#131826; --panel:#1a2031; --raise:#222a3f; --line:#323c56; --line2:#283149;
+  --ink:#eef1f8; --ink2:#bcc4d8; --ink3:#8a93ad;
+  --jil:#f6bf55; --jil-soft:#3a2f17; --forge:#5fd5a8; --forge-soft:#173a32;
+  --warn:#ff917c; --warn-soft:#41241f; --ok:#7bd99a; --ok-soft:#183626;
+  --w:#ec8d6f; --a:#86aef0; --c:#bb9af0; --m:#a9c493; --t:#eec377; --s:#76cbd6; --f:#eeb37a;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#14181d; --panel:#1a1f26; --raise:#20262e; --line:#2f3741; --line2:#262d36;
-  --ink:#e7eaee; --ink2:#b3bac4; --ink3:#848d99;
-  --jil:#e2ad48; --jil-soft:#3a2f1a; --forge:#6cc0a9; --forge-soft:#1d3530;
-  --warn:#ee8a72; --warn-soft:#3c2420; --ok:#7acb8f; --ok-soft:#1d3324;
-  --w:#e08a6e; --a:#7fa6e0; --c:#b393e0; --m:#a5b88f; --t:#e0bb72; --s:#72c4cf; --f:#e0ae72;
+  --bg:#131826; --panel:#1a2031; --raise:#222a3f; --line:#323c56; --line2:#283149;
+  --ink:#eef1f8; --ink2:#bcc4d8; --ink3:#8a93ad;
+  --jil:#f6bf55; --jil-soft:#3a2f17; --forge:#5fd5a8; --forge-soft:#173a32;
+  --warn:#ff917c; --warn-soft:#41241f; --ok:#7bd99a; --ok-soft:#183626;
+  --w:#ec8d6f; --a:#86aef0; --c:#bb9af0; --m:#a9c493; --t:#eec377; --s:#76cbd6; --f:#eeb37a;
   color-scheme:dark}
 *{box-sizing:border-box}
 html,body{height:100%}
-body{background:var(--bg);color:var(--ink);font:14px/1.5 var(--f-body);margin:0}
+body{background:var(--bg);color:var(--ink);font:14.5px/1.6 var(--f-body);margin:0}
 body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--panel)}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}

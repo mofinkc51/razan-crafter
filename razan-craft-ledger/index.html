@@ -7,24 +7,26 @@
 <title>Razan Craft Ledger</title>
 <meta name="description" content="คำนวณต้นทุนคราฟที่ Razan ใน 12Tails Online แตกสูตรย่อยอัตโนมัติ ใส่ราคาได้ทุกวัตถุดิบ">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mitr:wght@400;500;600&family=IBM+Plex+Sans+Thai+Looped:wght@400;500;600&display=swap">
 <link rel="stylesheet" href="assets/app.css">
+<link rel="stylesheet" href="assets/theme.css">
 </head>
 <body>
 <div class="app">
   <header class="top">
-    <div class="brand"><h1>Razan Craft Ledger</h1><small>12Tails Online · sv.TalesOfTails</small></div>
-    <nav class="views" id="views">
-      <button data-act="view" data-v="recipes" aria-pressed="true">สูตรคราฟ</button>
-      <button data-act="view" data-v="uses" aria-pressed="false">ค้นหาย้อนกลับ</button>
-      <button data-act="view" data-v="prices" aria-pressed="false">สมุดราคา</button>
-      <button data-act="view" data-v="queue" aria-pressed="false">รายการคราฟ<span class="cnt" id="qcnt"></span></button>
-      <button data-act="view" data-v="sets" aria-pressed="false">จัดเซ็ต</button>
+    <div class="brand"><span class="mark" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M6 21l9-9 5 5-9 9H6z"/><path d="M15 12l5-5 5 5-5 5"/><circle cx="23.5" cy="23.5" r="3"/></svg></span><div><h1>Razan Craft Ledger</h1><small>ผู้ช่วยคราฟและจัดเซ็ต 12Tails Online</small></div></div>
+    <nav class="views" id="views" aria-label="แท็บหลัก">
+      <button data-act="view" data-v="recipes" aria-pressed="true"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5h9.5L19 7v13.5H6z"/><path d="M15 3.5V7h4"/><path d="M9 11h7M9 14.5h7M9 18h4"/></svg><span class="lg">สูตรคราฟ</span><span class="sm">สูตร</span></button>
+      <button data-act="view" data-v="uses" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="5.5" r="2.5"/><circle cx="18" cy="18.5" r="2.5"/><path d="M8.3 11l7.4-4.3M8.3 13l7.4 4.3"/></svg><span class="lg">ค้นหาย้อนกลับ</span><span class="sm">ย้อนกลับ</span></button>
+      <button data-act="view" data-v="prices" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 12.5l8-8h8v8l-8 8z"/><circle cx="15.5" cy="8.5" r="1.6"/></svg><span class="lg">สมุดราคา</span><span class="sm">ราคา</span></button>
+      <button data-act="view" data-v="queue" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h3l1.5 12h9L20 9H9.3"/><circle cx="11" cy="21" r=".4"/><path d="M4 4h2.5l.5 3"/></svg><span class="lg">รายการคราฟ</span><span class="sm">รายการ</span><span class="cnt" id="qcnt"></span></button>
+      <button data-act="view" data-v="sets" aria-pressed="false"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l7.5 3v5.5c0 4.6-3.2 8-7.5 9.5-4.3-1.5-7.5-4.9-7.5-9.5V6z"/><path d="M12 7.5v9M8.5 11h7"/></svg><span class="lg">จัดเซ็ต</span><span class="sm">เซ็ต</span></button>
     </nav>
     <div class="meta">
       <span class="progress" title="จำนวนไอเทมที่ใส่ราคาแล้ว"><span class="bar"><i id="pbar"></i></span><span class="num" id="ptxt"></span></span>
+      <span class="sync" id="sync" title="ข้อมูลทั้งหมดเก็บในเบราว์เซอร์นี้ สำรองได้ที่สมุดราคา → ส่งออกแพ็ก .zip">บันทึกในเบราว์เซอร์นี้</span>
       <button class="themebtn" id="themebtn" data-act="theme" type="button"></button>
-      <span class="sync" id="sync">บันทึกในเบราว์เซอร์นี้</span>
+      <button class="helpbtn" id="helpbtn" type="button" aria-label="วิธีใช้แท็บนี้"><span aria-hidden="true">?</span><span class="lg">วิธีใช้</span></button>
     </div>
   </header>
   <main id="main" class="v-recipes"></main>
@@ -33,6 +35,7 @@
 <script src="assets/vendor/jszip.min.js"></script>
 <script src="data/recipes.js"></script>
 <script src="data/equipment.js"></script>
+<script src="assets/help.js"></script>
 <script src="assets/sets.js"></script>
 <script src="assets/app.js"></script>
 </body>

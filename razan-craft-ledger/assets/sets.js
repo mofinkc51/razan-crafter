@@ -49,15 +49,15 @@ function viewSets(){
   let B=setById(U.setB);if(B&&(B.cls!==U.setCls||(A&&B.id===A.id))){B=null;U.setB=""}
   const clsChips=EQ_CLASSES.map(([c,n])=>`<button class="chip" data-act="setcls" data-c="${c}" aria-pressed="${U.setCls===c}">${n}<span class="cnt">${S.sets.filter(s=>s.cls===c).length||""}</span></button>`).join("");
   const setChips=mine.map(s=>`<button class="chip setchip" data-act="setpick" data-id="${s.id}" aria-pressed="${A&&s.id===A.id}">${esc(setName(s))}</button>`).join("")+`<button class="chip newchip" data-act="setnew">+ เซ็ตใหม่</button>`;
-  const head=`<div class="intro"><div><h2>จัดเซ็ต</h2><p>ใส่อุปกรณ์ 6 ช่องและสเตตัสที่เพิ่มเอง เว็บจะรวมค่าทั้ง 8 ให้ บันทึกได้หลายเซ็ตและนำมาเทียบกันได้</p></div>
+  const head=`<div class="intro"><div><h2>จัดเซ็ต ${hi("@sets")}</h2><p>ใส่อุปกรณ์ 6 ช่องและสเตตัสที่เพิ่มเอง เว็บจะรวมค่าทั้ง 8 ให้ บันทึกได้หลายเซ็ตและนำมาเทียบกันได้</p></div>
      <div class="ptools">${ASSETS?`<label class="btn upl">อัปโหลดรูปหลายไฟล์<input type="file" id="bulkimg" accept="image/*" multiple></label>`:""}</div></div>
    <div class="sets-bar"><div class="barrow"><span class="barlab">อาชีพ</span><div class="chips">${clsChips}</div></div><div class="barrow"><span class="barlab">เซ็ต</span><div class="chips">${setChips}</div></div></div>`;
   if(!A)return `<section class="page"><div class="pwrap">${head}<div class="empty-note sets-empty">ยังไม่มีเซ็ตของ ${EQ_CLASS_TH[U.setCls]} กด “+ เซ็ตใหม่” เพื่อเริ่มจัดเซ็ตแรก</div></div>${U.pick?pickerHtml(null):""}</section>`;
   const ta=setTotals(A),tb=B?setTotals(B):null;
   const focusIdx=EQ_STATS.indexOf(A.focus);
   /* status strip: what the set gives, like the in-game status window */
-  const strip=`<div class="statstrip">${EQ_STATS.map((s,i)=>`<div class="stbox ${i===focusIdx?"fx":""}"><span class="stl">${s}</span><span class="stv num">${ta.t[i]}</span><span class="stb num">${ta.bn[i]?`<span title="อุปกรณ์ ${ta.g[i]} · เพิ่มเอง ${sgn(ta.bn[i])}">${ta.g[i]} ${sgn(ta.bn[i])}</span>`:tb?`<span class="${statCls(ta.t[i]-tb.t[i])}">${sgn(ta.t[i]-tb.t[i])}</span>`:"&nbsp;"}</span></div>`).join("")}
-     <div class="stbox all"><span class="stl">รวม</span><span class="stv num">${ta.sum}</span><span class="stb num">${tb?`<span class="${statCls(ta.sum-tb.sum)}">${sgn(ta.sum-tb.sum)}</span>`:`น.น. ${ta.w}`}</span></div></div>`;
+  const strip=`<div class="stripwrap"><div class="striphead"><span class="barlab">สเตตัสรวม ${hi("strip")}</span></div><div class="statstrip">${EQ_STATS.map((s,i)=>`<div class="stbox ${i===focusIdx?"fx":""}"><span class="stl">${s}</span><span class="stv num">${ta.t[i]}</span><span class="stb num">${ta.bn[i]?`<span title="อุปกรณ์ ${ta.g[i]} · เพิ่มเอง ${sgn(ta.bn[i])}">${ta.g[i]} ${sgn(ta.bn[i])}</span>`:tb?`<span class="${statCls(ta.t[i]-tb.t[i])}">${sgn(ta.t[i]-tb.t[i])}</span>`:"&nbsp;"}</span></div>`).join("")}
+     <div class="stbox all"><span class="stl">รวม</span><span class="stv num">${ta.sum}</span><span class="stb num">${tb?`<span class="${statCls(ta.sum-tb.sum)}">${sgn(ta.sum-tb.sum)}</span>`:`น.น. ${ta.w}`}</span></div></div></div>`;
   const slotCards=EQ_SLOTS.map(([slot,label])=>{const e=EQ.get(A.items[slot]);const other=B?EQ.get(B.items[slot]):null;const diff=B&&(A.items[slot]||"")!==(B.items[slot]||"");
     const stats=e?e.st.map((v,i)=>v?`<span class="${i===focusIdx?"fx":""}">${EQ_STATS[i]} ${v}</span>`:"").join(""):"";
     return `<div class="slotcard ${e?"":"empty"} ${diff?"diff":""}"><button class="slotbtn" data-act="setslot" data-s="${slot}"><span class="slotlab">${label}${diff?' <span class="difftag">ต่างจาก '+esc(setName(B))+'</span>':""}</span>
@@ -68,7 +68,7 @@ function viewSets(){
   const bonusRows=(A.bonus||[]).map((b,i)=>`<div class="bnrow"><select class="inp bnstat" data-bn="s" data-i="${i}" aria-label="สเตตัส">${EQ_STATS.map(s=>`<option${s===b.s?" selected":""}>${s}</option>`).join("")}</select>
       <input class="inp num bnval" data-bn="v" data-i="${i}" data-f="bnv${i}" inputmode="numeric" value="${b.v}" aria-label="ค่าที่เพิ่ม">
       <button class="x" data-act="setbndel" data-i="${i}" aria-label="ลบแถวนี้">×</button></div>`).join("");
-  const bonusBox=`<div class="bonusbox"><div class="bnhead"><b>เพิ่มสเตตัส</b><span class="ghint">ค่าที่ได้นอกจากอุปกรณ์ เช่น แต้มสเตตัสที่อัปเอง การ์ด หรือการตีบวก ใส่ค่าติดลบได้</span></div>
+  const bonusBox=`<div class="bonusbox"><div class="bnhead"><b>เพิ่มสเตตัส ${hi("bonus")}</b><span class="ghint">ค่าที่ได้นอกจากอุปกรณ์ เช่น แต้มสเตตัสที่อัปเอง การ์ด หรือการตีบวก ใส่ค่าติดลบได้</span></div>
      ${bonusRows?`<div class="bnlist">${bonusRows}</div>`:""}
      <div class="chips bnadd">${EQ_STATS.map(s=>`<button class="chip" data-act="setbnadd" data-stat="${s}">+ ${s}</button>`).join("")}</div></div>`;
   const others=mine.filter(s=>s.id!==A.id);
@@ -90,12 +90,12 @@ function viewSets(){
    <div class="seteditor">
     <div class="sethead"><input class="inp setname" id="setname" data-f="setname" value="${esc(A.name)}" placeholder="ชื่อเซ็ต" aria-label="ชื่อเซ็ต" maxlength="40">
      <div class="ptools"><button class="btn" data-act="setdup">ทำสำเนา</button>${craftable.length?`<button class="btn" data-act="setqueue">ส่งชิ้นที่คราฟได้ไปรายการคราฟ (${craftable.length})</button>`:""}<button class="btn ghost" data-act="setdel">ลบเซ็ต</button></div></div>
-    <div class="focusbar"><span class="barlab">เน้นค่า</span><div class="chips"><button class="chip" data-act="setfocus" data-stat="" aria-pressed="${!A.focus}">ไม่ระบุ</button>${EQ_STATS.map(s=>`<button class="chip" data-act="setfocus" data-stat="${s}" aria-pressed="${A.focus===s}">${s}</button>`).join("")}</div></div>
+    <div class="focusbar"><span class="barlab">เน้นค่า ${hi("focus")}</span><div class="chips"><button class="chip" data-act="setfocus" data-stat="" aria-pressed="${!A.focus}">ไม่ระบุ</button>${EQ_STATS.map(s=>`<button class="chip" data-act="setfocus" data-stat="${s}" aria-pressed="${A.focus===s}">${s}</button>`).join("")}</div></div>
     ${strip}
     <div class="slotgrid">${slotCards}</div>
     ${bonusBox}
    </div>
-   <div class="sec"><h3>เทียบเซ็ต <span class="hint">ค่าพื้นฐานของอุปกรณ์รวมกับสเตตัสที่เพิ่มเอง · ช่อง “ต่าง” คือเซ็ตนี้ลบเซ็ตที่นำมาเทียบ</span></h3>
+   <div class="sec"><h3>เทียบเซ็ต ${hi("cmp")}<span class="hint">ค่าพื้นฐานของอุปกรณ์รวมกับสเตตัสที่เพิ่มเอง · ช่อง “ต่าง” คือเซ็ตนี้ลบเซ็ตที่นำมาเทียบ</span></h3>
     <div class="cmpbar"><span class="barlab">เทียบกับ</span><div class="chips">${cmpChips}</div></div>
     <div class="cmpgrid">${cmpTable}<div class="radarbox">${setRadar(ta,tb)}<div class="rdleg"><span class="la">${esc(setName(A))}</span>${tb?`<span class="lb">${esc(setName(B))}</span>`:""}</div></div></div></div>
    <div class="sec"><h3>แยกตามชิ้น</h3><div class="bdwrap">${breakdown(A)}${B?breakdown(B):""}</div></div>
@@ -114,7 +114,7 @@ function pickerHtml(A){const slot=U.pick,cls=A?A.cls:U.setCls,cur=A?EQ.get(A.ite
      <span class="pkst"><span class="num">${e.w}</span></span>`;
     return imgMode?`<label class="pkrow img">${inner}<input type="file" accept="image/*" data-img="${esc(e.k)}" hidden></label>`:`<button class="pkrow ${on?"on":""}" data-act="setequip" data-id="${esc(e.id)}">${inner}</button>`}).join("");
   return `<div class="picker" role="dialog" aria-label="เลือก${EQ_SLOT_TH[slot]}"><div class="pkbox">
-   <div class="pkhead"><div><h3>${imgMode?"ใส่รูป":"เลือก"}${EQ_SLOT_TH[slot]} · ${EQ_CLASS_TH[cls]}</h3><div class="ghint">${list.length} ชิ้น · เรียงตาม ${sortLabel}${imgMode?" · กดแถวเพื่อเลือกไฟล์รูปจากเครื่อง":cur?" · ตัวเลขเล็กคือส่วนต่างเทียบกับ "+esc(cur.name):""}</div></div><button class="btn ghost" data-act="setpickclose">ปิด</button></div>
+   <div class="pkhead"><div><h3>${imgMode?"ใส่รูป":"เลือก"}${EQ_SLOT_TH[slot]} · ${EQ_CLASS_TH[cls]} ${hi("pick")}</h3><div class="ghint">${list.length} ชิ้น · เรียงตาม ${sortLabel}${imgMode?" · กดแถวเพื่อเลือกไฟล์รูปจากเครื่อง":cur?" · ตัวเลขเล็กคือส่วนต่างเทียบกับ "+esc(cur.name):""}</div></div><button class="btn ghost" data-act="setpickclose">ปิด</button></div>
    <div class="pktools"><input class="inp" id="pickq" data-f="pickq" type="search" placeholder="ค้นหาชื่อ…" value="${esc(U.pickQ||"")}" autocomplete="off">
     <div class="chips"><span class="ghint">เรียงตาม</span>${EQ_STATS.map(s=>`<button class="chip" data-act="setsort" data-v="${s}" aria-pressed="${si===EQ_STATS.indexOf(s)}">${s}</button>`).join("")}<button class="chip" data-act="setsort" data-v="sum" aria-pressed="${si<0}">รวม</button></div>
     <label class="chk"><input type="checkbox" id="pickcraft" ${U.pickCraft?"checked":""}> เฉพาะที่คราฟได้</label>
